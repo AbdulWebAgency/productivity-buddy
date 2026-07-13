@@ -78,6 +78,7 @@ export const registerJobFiles = createServerFn({ method: "POST" })
     const { extractSheetMeta } = await import("./excel/engine.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
+    type Json = import("@/integrations/supabase/types").Json;
     const rows: {
       job_id: string;
       user_id: string;
@@ -85,8 +86,9 @@ export const registerJobFiles = createServerFn({ method: "POST" })
       storage_path: string;
       original_name: string;
       size_bytes: number;
-      sheet_meta: unknown;
+      sheet_meta: Json;
     }[] = [];
+
 
     for (const f of data.files) {
       const { data: blob, error: dlErr } = await supabaseAdmin.storage
@@ -110,9 +112,10 @@ export const registerJobFiles = createServerFn({ method: "POST" })
         storage_path: f.storagePath,
         original_name: f.originalName,
         size_bytes: f.sizeBytes,
-        sheet_meta: meta,
+        sheet_meta: meta as Json,
       });
     }
+
 
     const { error: insErr } = await supabase.from("excel_job_files").insert(rows);
     if (insErr) throw new Error(insErr.message);
@@ -273,17 +276,19 @@ export const runJob = createServerFn({ method: "POST" })
         });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
 
+      type Json2 = import("@/integrations/supabase/types").Json;
       await supabase
         .from("excel_jobs")
         .update({
           status: "succeeded",
           output_path: outputPath,
           output_name: outputName,
-          stats: result.stats,
-          warnings: result.warnings,
+          stats: result.stats as Json2,
+          warnings: result.warnings as Json2,
           completed_at: new Date().toISOString(),
         })
         .eq("id", data.jobId);
+
 
       await supabase.from("excel_job_files").insert({
         job_id: data.jobId,

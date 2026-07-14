@@ -95,6 +95,7 @@ function normalizeOp(raw: unknown, files: FileForAi[], repairs: string[]): Loose
   // Normalize the tag.
   let tag = String(o.op ?? o.type ?? o.action ?? o.kind ?? "").toLowerCase().trim();
   if (tag === "compare" || tag === "difference") tag = "diff";
+  if (tag === "common" || tag === "intersect" || tag === "in_both") tag = "intersection";
   if (tag === "deduplicate" || tag === "unique") tag = "dedupe";
   if (tag === "join" || tag === "combine") tag = "merge";
   if (tag === "highlight") tag = "highlight_column";

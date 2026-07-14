@@ -90,9 +90,27 @@ const HEADER_STYLE = {
 };
 
 function findColumnIndex(headers: string[], name: string): number {
-  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, " ");
+  const norm = (s: string) => s.trim().toLowerCase().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
   const target = norm(name);
-  return headers.findIndex((h) => norm(h) === target);
+  // 1. exact normalized match
+  let idx = headers.findIndex((h) => norm(h) === target);
+  if (idx >= 0) return idx;
+  // 2. substring either direction (e.g. "Name" ↔ "First Year Student Name")
+  idx = headers.findIndex((h) => {
+    const n = norm(h);
+    return n.includes(target) || target.includes(n);
+  });
+  if (idx >= 0) return idx;
+  // 3. token-subset match (all target words appear as whole words in header)
+  const targetTokens = target.split(" ").filter(Boolean);
+  if (targetTokens.length) {
+    idx = headers.findIndex((h) => {
+      const tokens = new Set(norm(h).split(" ").filter(Boolean));
+      return targetTokens.every((t) => tokens.has(t));
+    });
+    if (idx >= 0) return idx;
+  }
+  return -1;
 }
 
 function styleHeader(ws: ExcelJS.Worksheet) {

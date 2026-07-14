@@ -63,6 +63,7 @@ const KNOWN_OPS = new Set([
   "merge",
   "dedupe",
   "diff",
+  "intersection",
   "summary",
   "recalc",
   "highlight_column",

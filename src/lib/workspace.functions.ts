@@ -414,6 +414,8 @@ function describePlan(plan: Plan): string {
     else if (op.op === "dedupe")
       lines.push(`• Remove duplicates${op.keyColumn ? ` by **${op.keyColumn}**` : " (full row)"}`);
     else if (op.op === "diff") lines.push(`• Compare files on **${op.keyColumn}** and list differences`);
+    else if (op.op === "intersection")
+      lines.push(`• Find rows present in both files, matched on **${op.keyColumn}**`);
     else if (op.op === "summary") lines.push(`• Add a summary sheet`);
     else if (op.op === "highlight_column")
       lines.push(`• Highlight ${op.rule} values in **${op.column}**`);

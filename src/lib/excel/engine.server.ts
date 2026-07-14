@@ -556,6 +556,37 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
           ...d.stats,
           sheets: [sheetMissingA, sheetMissingB, ...(d.changed.rows.length ? ["Changed rows"] : [])],
         });
+      } else if (op.op === "intersection") {
+        const aIdx = op.fileAIndex;
+        const bIdx = op.fileBIndex;
+        const a = grids[aIdx];
+        const b = grids[bIdx];
+        if (!a || !b) {
+          warnings.push(`intersection skipped: file index ${aIdx}/${bIdx} out of range`);
+          opLogs.push({ op: "intersection", status: "skipped", reason: "file index out of range" });
+          continue;
+        }
+        if (aIdx === bIdx) {
+          warnings.push("intersection skipped: same file on both sides");
+          opLogs.push({ op: "intersection", status: "skipped", reason: "same file on both sides" });
+          continue;
+        }
+        const nameA = files[aIdx].name;
+        const nameB = files[bIdx].name;
+        const inter = opIntersection(a, b, op, nameA, nameB);
+        const sheetName = "Common rows";
+        writeGridToSheet(outWb, sheetName, inter.grid);
+        producedSheets++;
+        opLogs.push({
+          op: "intersection",
+          status: "ok",
+          ms: Date.now() - started,
+          keyColumn: op.keyColumn,
+          fileA: nameA,
+          fileB: nameB,
+          ...inter.stats,
+          sheet: sheetName,
+        });
       } else if (op.op === "summary") {
         const s = opSummary(currentGrid);
         writeGridToSheet(outWb, "Summary", s);

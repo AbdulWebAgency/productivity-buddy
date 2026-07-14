@@ -42,6 +42,8 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
       lines.push(`• Removed ${op.duplicatesRemoved ?? 0} duplicate rows (${op.rowsOut ?? 0} kept).`);
     } else if (op.op === "diff") {
       lines.push(`• Compared files on "${op.keyColumn}" — ${op.missingInA ?? 0} missing in A, ${op.missingInB ?? 0} missing in B, ${op.changed ?? 0} changed.`);
+    } else if (op.op === "intersection") {
+      lines.push(`• Found ${op.common ?? 0} rows present in both files (matched on "${op.keyColumn}").`);
     } else if (op.op === "summary") {
       lines.push(`• Generated a summary sheet.`);
     } else {

@@ -147,12 +147,10 @@ export function tryDeterministicPlan(
   const shared = commonColumns(files);
   const sharedNames = shared.map((s) => s.display);
 
+  const picked = pickBestKey(shared, opts.preferredKey ?? null);
   const buildKeyOp = (): { key: string | null; tied: string[] } => {
-    return pickBestKey(shared, opts.preferredKey ?? null).key
-      ? { key: pickBestKey(shared, opts.preferredKey ?? null).key, tied: [] }
-      : pickBestKey(shared, opts.preferredKey ?? null).tiedCandidates.length
-        ? { key: null, tied: pickBestKey(shared, opts.preferredKey ?? null).tiedCandidates }
-        : { key: null, tied: sharedNames };
+    if (picked.key) return { key: picked.key, tied: [] };
+    return { key: null, tied: picked.tiedCandidates.length ? picked.tiedCandidates : sharedNames };
   };
 
   if (effectiveIntent === "intersection") {

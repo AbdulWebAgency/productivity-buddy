@@ -1,0 +1,53 @@
+// Convert engine / planner errors into human-readable guidance.
+
+export function friendlyError(err: unknown): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const low = raw.toLowerCase();
+  if (low.includes("needs clarification") || low.includes("shared key column")) {
+    return "I couldn't find a shared column to match on. Please pick which column should be used, or rename the columns so they match.";
+  }
+  if (low.includes("no plan available")) {
+    return "There's no plan to run yet. Tell me what you'd like to do first.";
+  }
+  if (low.includes("key column") && low.includes("not found")) {
+    return `A column I was told to match on doesn't exist in one of the files. ${raw}`;
+  }
+  if (low.includes("no input files")) {
+    return "This workspace has no uploaded files yet. Upload one or more spreadsheets to begin.";
+  }
+  if (low.includes("planner produced no operations")) {
+    return "I couldn't turn that into a concrete plan. Try rephrasing (e.g. \"merge on Registration Number\" or \"find missing students\").";
+  }
+  if (low.includes("unauthorized") || low.includes("forbidden")) {
+    return "You don't have access to that workspace.";
+  }
+  if (low.includes("zod") || low.includes("invalid_type") || low.includes("expected")) {
+    return "I couldn't understand that request. Could you rephrase it more directly?";
+  }
+  return raw;
+}
+
+// Human-readable summary of run stats for the assistant reply.
+export function summarizeRun(stats: Record<string, unknown>, warnings: string[]): string {
+  const ops = Array.isArray(stats.ops) ? (stats.ops as Record<string, unknown>[]) : [];
+  const lines: string[] = [];
+  for (const op of ops) {
+    if (op.status === "skipped") {
+      lines.push(`• Skipped ${op.op}: ${op.reason ?? "unknown reason"}`);
+      continue;
+    }
+    if (op.op === "merge") {
+      lines.push(`• Merged ${op.inputFiles ?? "?"} files on "${op.keyColumn}" — ${op.merged ?? 0} rows (${op.unmatched ?? 0} unmatched).`);
+    } else if (op.op === "dedupe") {
+      lines.push(`• Removed ${op.duplicatesRemoved ?? 0} duplicate rows (${op.rowsOut ?? 0} kept).`);
+    } else if (op.op === "diff") {
+      lines.push(`• Compared files on "${op.keyColumn}" — ${op.missingInA ?? 0} missing in A, ${op.missingInB ?? 0} missing in B, ${op.changed ?? 0} changed.`);
+    } else if (op.op === "summary") {
+      lines.push(`• Generated a summary sheet.`);
+    } else {
+      lines.push(`• Ran ${op.op}.`);
+    }
+  }
+  if (warnings.length) lines.push(`\nNotes: ${warnings.join("; ")}`);
+  return lines.join("\n") || "Done.";
+}

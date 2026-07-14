@@ -136,6 +136,175 @@ export type Database = {
         }
         Relationships: []
       }
+      workspace_files: {
+        Row: {
+          created_at: string
+          id: string
+          inspector: Json | null
+          original_name: string
+          sheet_meta: Json | null
+          size_bytes: number
+          storage_path: string
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inspector?: Json | null
+          original_name: string
+          sheet_meta?: Json | null
+          size_bytes?: number
+          storage_path: string
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inspector?: Json | null
+          original_name?: string
+          sheet_meta?: Json | null
+          size_bytes?: number
+          storage_path?: string
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_files_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_messages: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          role: string
+          tool_data: Json | null
+          user_id: string
+          workspace_id: string
+        }
+        Insert: {
+          content?: string
+          created_at?: string
+          id?: string
+          role: string
+          tool_data?: Json | null
+          user_id: string
+          workspace_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          tool_data?: Json | null
+          user_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_messages_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_versions: {
+        Row: {
+          created_at: string
+          id: string
+          label: string
+          output_name: string | null
+          output_path: string | null
+          parent_version_id: string | null
+          plan: Json | null
+          size_bytes: number
+          stats: Json
+          user_id: string
+          version_number: number
+          warnings: Json
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          label?: string
+          output_name?: string | null
+          output_path?: string | null
+          parent_version_id?: string | null
+          plan?: Json | null
+          size_bytes?: number
+          stats?: Json
+          user_id: string
+          version_number: number
+          warnings?: Json
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          label?: string
+          output_name?: string | null
+          output_path?: string | null
+          parent_version_id?: string | null
+          plan?: Json | null
+          size_bytes?: number
+          stats?: Json
+          user_id?: string
+          version_number?: number
+          warnings?: Json
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_versions_parent_version_id_fkey"
+            columns: ["parent_version_id"]
+            isOneToOne: false
+            referencedRelation: "workspace_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_versions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspaces: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

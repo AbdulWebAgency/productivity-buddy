@@ -543,6 +543,7 @@ export const runProposedPlan = createServerFn({ method: "POST" })
 function planLabel(plan: Plan): string {
   const kinds = plan.ops.map((o) => o.op);
   if (kinds.includes("merge")) return "Merge";
+  if (kinds.includes("intersection")) return "Common rows";
   if (kinds.includes("diff")) return "Compare";
   if (kinds.includes("dedupe")) return "Dedupe";
   if (kinds.includes("summary")) return "Summary";

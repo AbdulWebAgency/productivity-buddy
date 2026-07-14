@@ -31,7 +31,7 @@ function ProtectedLayout() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/app" className="flex items-center gap-2 font-serif text-lg">
+          <Link to="/app/workspaces" className="flex items-center gap-2 font-serif text-lg">
             <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
               <FileSpreadsheet className="h-4 w-4" />
             </span>

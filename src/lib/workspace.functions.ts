@@ -257,8 +257,85 @@ export const sendMessage = createServerFn({ method: "POST" })
       return { kind: "text" as const, text: reply };
     }
 
+    // Look at the most recent assistant tool_data for pending unresolved
+    // intent (e.g. a prior clarification asking which column to use).
+    type PendingClarify = {
+      kind: "clarify";
+      pendingIntent?: string;
+      pendingSide?: "A" | "B" | "either";
+      candidates?: string[];
+    };
+    const { data: lastAssistant } = await supabase
+      .from("workspace_messages")
+      .select("tool_data,created_at")
+      .eq("workspace_id", data.workspaceId)
+      .eq("role", "assistant")
+      .order("created_at", { ascending: false })
+      .limit(1);
+    const pending: PendingClarify | null = (() => {
+      const td = lastAssistant?.[0]?.tool_data as { kind?: string } | null;
+      if (td && td.kind === "clarify") return td as PendingClarify;
+      return null;
+    })();
+
     const { tryDeterministicPlan } = await import("./excel/deterministic-plan");
-    const det = tryDeterministicPlan(data.text, filesForAi);
+    const { classifyIntent, extractKeyOverride } = await import("./excel/intent");
+
+    const capabilities = () => {
+      const reply = [
+        "Here's what I can help with:",
+        "",
+        "• **Find common records** — students / rows present in both files",
+        "• **Find missing rows** — who's in one file but not the other (new joinees, dropouts)",
+        "• **Merge workbooks** on a shared key (Registration No, ID, Email, …)",
+        "• **Remove duplicates** by key or full-row match",
+        "• **Compare versions** — diff two files and list changes",
+        "• **Highlight** missing values, duplicates, or outliers",
+        "• **Generate summaries** with row counts and numeric stats",
+        "• **Clean up** blank rows and inconsistent formatting",
+        "• **Explain formulas** and suggest simpler alternatives",
+        "",
+        "Just describe what you want in plain English — I'll pick the right operation.",
+      ].join("\n");
+      return reply;
+    };
+
+    // Detect an explicit key override ("use ID NO instead", "match on Name").
+    const override = extractKeyOverride(data.text);
+
+    // If the previous turn asked for clarification and the current message is
+    // short, treat it as the user picking a key and resume the pending intent.
+    let preferredKey: string | null = override;
+    if (!preferredKey && pending) {
+      const short = data.text.trim().length <= 40 && !/[?.!]$/.test(data.text.trim());
+      const looksLikeColumn =
+        short && classifyIntent(data.text).intent === "unknown";
+      if (looksLikeColumn) preferredKey = data.text.trim();
+    }
+
+    const det = tryDeterministicPlan(data.text, filesForAi, {
+      resumeIntent: pending?.pendingIntent as
+        | "intersection"
+        | "difference"
+        | "merge"
+        | "dedupe"
+        | "summary"
+        | "clean"
+        | undefined,
+      resumeSide: pending?.pendingSide,
+      preferredKey,
+    });
+
+    if (det?.kind === "capabilities") {
+      const reply = capabilities();
+      await supabase.from("workspace_messages").insert({
+        workspace_id: data.workspaceId,
+        user_id: userId,
+        role: "assistant",
+        content: reply,
+      });
+      return { kind: "text" as const, text: reply };
+    }
 
     if (det?.kind === "plan") {
       const plan: Plan = { ...det.plan, warnings: [...det.plan.warnings, ...det.notes] };
@@ -286,6 +363,8 @@ export const sendMessage = createServerFn({ method: "POST" })
           kind: "clarify",
           candidates: det.candidateKeys,
           sharedColumns: det.sharedColumns,
+          pendingIntent: det.pendingIntent,
+          pendingSide: det.pendingSide ?? null,
         } as unknown as import("@/integrations/supabase/types").Json,
       });
       return { kind: "clarify" as const, candidates: det.candidateKeys };
@@ -293,7 +372,8 @@ export const sendMessage = createServerFn({ method: "POST" })
 
     // Fallback: conversational AI reply (no plan produced)
     const apiKey = process.env.LOVABLE_API_KEY;
-    let reply = "I'm not sure what to do. Try asking me to compare, merge, dedupe, or summarize your files.";
+    let reply =
+      "I'm not sure what to do yet. Try asking things like \"who is in both files\", \"which students are missing\", \"merge on Registration No\", or type **what can you do** to see everything I handle.";
     if (apiKey) {
       try {
         const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
@@ -310,7 +390,7 @@ export const sendMessage = createServerFn({ method: "POST" })
         const { text } = await generateText({
           model: gateway("google/gemini-2.5-flash"),
           system:
-            "You are Ledgerly, a friendly office-document AI coworker. Answer briefly (max 4 sentences). Only discuss the user's uploaded Excel files, columns, and possible operations (compare, merge, dedupe, summary). If the user asks for an operation, suggest they phrase it clearly and mention the column to match on. Never invent data.",
+            "You are Ledgerly, a friendly office-document AI coworker. Answer briefly (max 4 sentences). Only discuss the user's uploaded Excel files, columns, and possible operations (find common rows, find missing rows, merge, dedupe, summary, clean, explain formulas). If the user asks for an operation, suggest they phrase it clearly and mention the column to match on. Never invent data.",
           prompt: `Uploaded files:\n${filesSummary}\n\nUser: ${data.text}`,
         });
         reply = text.trim() || reply;

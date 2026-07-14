@@ -1,7 +1,11 @@
-// Deterministic planner. Skips the AI when the intent + column headers are
-// unambiguous. Returns null when human/AI judgement is needed.
+// Intent-driven deterministic planner.
+// 1. Classify user intent into a concept (intersection, difference, merge, ...)
+// 2. Resolve columns / files / keys deterministically
+// 3. Only ask for clarification when genuinely ambiguous
+//    (e.g. multiple equally-strong keys, or missing intent).
 
 import type { Plan, PlanOp } from "./types";
+import { classifyIntent, type Intent } from "./intent";
 
 export type FileForAi = {
   index: number;
@@ -21,6 +25,7 @@ const KEY_HINTS = [
   "phone",
   "mobile",
   "code",
+  "id no",
   "id",
   "number",
   "sl no",
@@ -32,11 +37,9 @@ function norm(s: string): string {
 }
 
 function fileHeaders(f: FileForAi): string[] {
-  // Prefer first sheet — engine also uses first sheet only.
   return f.sheets[0]?.headers ?? [];
 }
 
-// Columns that appear (case/punctuation-insensitive) in every file's first sheet.
 function commonColumns(files: FileForAi[]): { display: string; perFile: string[] }[] {
   if (files.length === 0) return [];
   const perFileMaps = files.map((f) => {
@@ -59,84 +62,164 @@ function commonColumns(files: FileForAi[]): { display: string; perFile: string[]
   return out;
 }
 
-function pickKeyColumn(shared: { display: string; perFile: string[] }[]): string | null {
-  if (shared.length === 0) return null;
-  // Score by hint match; prefer more specific hints.
-  const scored = shared.map((c) => {
-    const n = norm(c.display);
-    let score = 0;
-    for (const h of KEY_HINTS) if (n.includes(h)) score += h.length;
-    return { c, score };
-  });
-  scored.sort((a, b) => b.score - a.score);
-  if (scored[0].score > 0) return scored[0].c.display;
-  // Single shared column? use it.
-  if (shared.length === 1) return shared[0].display;
-  return null;
+// Score shared columns by "keyness". A single top-scoring column is used
+// automatically. Ties across multiple strong keys trigger clarification.
+function scoreKey(display: string): number {
+  const n = norm(display);
+  let score = 0;
+  for (const h of KEY_HINTS) if (n.includes(h)) score = Math.max(score, h.length);
+  return score;
 }
 
-function detectOp(intent: string): "diff" | "merge" | "dedupe" | null {
-  const s = intent.toLowerCase();
-  if (/\b(missing|not in|absent|only in|present in .* (?:but|and) .* not|difference|compare|diff)\b/.test(s)) return "diff";
-  if (/\b(merge|combine|join|consolidat|union|intersect)\b/.test(s)) return "merge";
-  if (/\b(dedup|duplicate|unique)\b/.test(s)) return "dedupe";
-  return null;
+function pickBestKey(
+  shared: { display: string; perFile: string[] }[],
+  preferred?: string | null,
+): { key: string | null; tiedCandidates: string[] } {
+  if (shared.length === 0) return { key: null, tiedCandidates: [] };
+
+  if (preferred) {
+    const match = shared.find((s) => norm(s.display) === norm(preferred));
+    if (match) return { key: match.display, tiedCandidates: [] };
+    // Preferred not in shared — still return it; engine's fuzzy findColumnIndex
+    // will try to resolve per file.
+    return { key: preferred, tiedCandidates: [] };
+  }
+
+  if (shared.length === 1) return { key: shared[0].display, tiedCandidates: [] };
+
+  const scored = shared
+    .map((c) => ({ c, score: scoreKey(c.display) }))
+    .sort((a, b) => b.score - a.score);
+
+  const top = scored[0];
+  if (top.score === 0) {
+    // No hint match at all → ambiguous; return all shared as candidates
+    return { key: null, tiedCandidates: shared.map((s) => s.display) };
+  }
+  const tied = scored.filter((s) => s.score === top.score).map((s) => s.c.display);
+  if (tied.length === 1) return { key: top.c.display, tiedCandidates: [] };
+  return { key: null, tiedCandidates: tied };
 }
 
 export type DeterministicResult =
-  | { kind: "plan"; plan: Plan; notes: string[] }
-  | { kind: "needs_clarification"; reason: string; sharedColumns: string[]; candidateKeys: string[] };
+  | { kind: "plan"; plan: Plan; notes: string[]; intent: Intent }
+  | {
+      kind: "needs_clarification";
+      reason: string;
+      sharedColumns: string[];
+      candidateKeys: string[];
+      pendingIntent: Intent;
+      pendingSide?: "A" | "B" | "either";
+    }
+  | { kind: "capabilities" };
+
+export type PlannerOptions = {
+  // A prior unresolved intent from earlier in the conversation. If the current
+  // message is a short key-name reply (e.g. "Name"), we resume that intent.
+  resumeIntent?: Intent;
+  resumeSide?: "A" | "B" | "either";
+  // A user-specified key override (from "use X instead" or plain key name).
+  preferredKey?: string | null;
+};
 
 export function tryDeterministicPlan(
   intent: string | null | undefined,
   files: FileForAi[],
+  opts: PlannerOptions = {},
 ): DeterministicResult | null {
   const trimmed = (intent ?? "").trim();
   if (!trimmed) return null;
-  const opKind = detectOp(trimmed);
-  if (!opKind) return null;
+
+  const classified = classifyIntent(trimmed);
+  let effectiveIntent: Intent = classified.intent;
+  let side = classified.side;
+
+  // Resume prior unresolved intent when the current message doesn't classify
+  // (e.g. user is just replying with a column name).
+  if (effectiveIntent === "unknown" && opts.resumeIntent) {
+    effectiveIntent = opts.resumeIntent;
+    side = opts.resumeSide;
+  }
+
+  if (effectiveIntent === "capabilities") return { kind: "capabilities" };
+  if (effectiveIntent === "unknown") return null;
 
   const shared = commonColumns(files);
   const sharedNames = shared.map((s) => s.display);
 
-  if (opKind === "diff") {
+  const buildKeyOp = (): { key: string | null; tied: string[] } => {
+    return pickBestKey(shared, opts.preferredKey ?? null).key
+      ? { key: pickBestKey(shared, opts.preferredKey ?? null).key, tied: [] }
+      : pickBestKey(shared, opts.preferredKey ?? null).tiedCandidates.length
+        ? { key: null, tied: pickBestKey(shared, opts.preferredKey ?? null).tiedCandidates }
+        : { key: null, tied: sharedNames };
+  };
+
+  if (effectiveIntent === "intersection") {
     if (files.length < 2) return null;
-    const key = pickKeyColumn(shared);
+    const { key, tied } = buildKeyOp();
     if (!key) {
       return {
         kind: "needs_clarification",
-        reason: `Could not find a shared key column across "${files[0]?.name}" and "${files[1]?.name}". Please tell me which column to match on.`,
+        reason: `To find rows present in both "${files[0]?.name}" and "${files[1]?.name}", pick a column to match on.`,
         sharedColumns: sharedNames,
-        candidateKeys: sharedNames,
+        candidateKeys: tied,
+        pendingIntent: "intersection",
+      };
+    }
+    const ops: PlanOp[] = [
+      { op: "intersection", keyColumn: key, fileAIndex: 0, fileBIndex: 1 },
+    ];
+    return {
+      kind: "plan",
+      intent: "intersection",
+      plan: {
+        summary: `Rows present in both "${files[0].name}" and "${files[1].name}", matched on "${key}".`,
+        ops,
+        columnMappings: [],
+        warnings: [],
+      },
+      notes: [`Deterministic intersection on "${key}".`],
+    };
+  }
+
+  if (effectiveIntent === "difference") {
+    if (files.length < 2) return null;
+    const { key, tied } = buildKeyOp();
+    if (!key) {
+      return {
+        kind: "needs_clarification",
+        reason: `To compare "${files[0]?.name}" and "${files[1]?.name}", pick a column to match on.`,
+        sharedColumns: sharedNames,
+        candidateKeys: tied,
+        pendingIntent: "difference",
+        pendingSide: side,
       };
     }
     const ops: PlanOp[] = [{ op: "diff", keyColumn: key, fileAIndex: 0, fileBIndex: 1 }];
     return {
       kind: "plan",
+      intent: "difference",
       plan: {
-        summary: `Deterministic diff on "${key}" between "${files[0].name}" and "${files[1].name}".`,
+        summary: `Difference between "${files[0].name}" and "${files[1].name}" on "${key}".`,
         ops,
-        columnMappings: [
-          {
-            canonical: key,
-            perFile: files.map((f, i) => ({ fileIndex: i, column: shared.find((s) => s.display === key)?.perFile[i] ?? key })),
-          },
-        ],
-        warnings: [],
+        columnMappings: [],
+        warnings: side ? [`Requested side: only in file ${side}.`] : [],
       },
-      notes: [`Skipped AI: exact header match on "${key}".`],
+      notes: [`Deterministic difference on "${key}".`],
     };
   }
 
-  if (opKind === "merge") {
+  if (effectiveIntent === "merge") {
     if (files.length < 2) return null;
-    const key = pickKeyColumn(shared);
+    const { key, tied } = buildKeyOp();
     if (!key) {
       return {
         kind: "needs_clarification",
-        reason: `Could not find a shared key column across the uploaded files. Please tell me which column to merge on.`,
+        reason: `Which column should I merge on?`,
         sharedColumns: sharedNames,
-        candidateKeys: sharedNames,
+        candidateKeys: tied,
+        pendingIntent: "merge",
       };
     }
     const ops: PlanOp[] = [
@@ -144,32 +227,63 @@ export function tryDeterministicPlan(
     ];
     return {
       kind: "plan",
+      intent: "merge",
       plan: {
-        summary: `Deterministic merge on "${key}".`,
+        summary: `Merge all files on "${key}".`,
         ops,
         columnMappings: [],
         warnings: [],
       },
-      notes: [`Skipped AI: exact header match on "${key}".`],
+      notes: [`Deterministic merge on "${key}".`],
     };
   }
 
-  if (opKind === "dedupe") {
-    const key = pickKeyColumn(shared);
+  if (effectiveIntent === "dedupe") {
+    const { key } = buildKeyOp();
     const ops: PlanOp[] = key
       ? [{ op: "dedupe", strategy: "key", keyColumn: key }]
       : [{ op: "dedupe", strategy: "full_row" }];
     return {
       kind: "plan",
+      intent: "dedupe",
       plan: {
-        summary: key ? `Deterministic dedupe on "${key}".` : "Deterministic full-row dedupe.",
+        summary: key ? `Remove duplicates using "${key}".` : "Remove full-row duplicates.",
         ops,
         columnMappings: [],
         warnings: [],
       },
-      notes: ["Skipped AI: deterministic dedupe."],
+      notes: ["Deterministic dedupe."],
     };
   }
 
+  if (effectiveIntent === "summary") {
+    return {
+      kind: "plan",
+      intent: "summary",
+      plan: {
+        summary: "Add a summary sheet with row counts and numeric column stats.",
+        ops: [{ op: "summary", includeCharts: false }],
+        columnMappings: [],
+        warnings: [],
+      },
+      notes: ["Deterministic summary."],
+    };
+  }
+
+  if (effectiveIntent === "clean") {
+    return {
+      kind: "plan",
+      intent: "clean",
+      plan: {
+        summary: "Remove full-row duplicates and blank rows.",
+        ops: [{ op: "dedupe", strategy: "full_row" }],
+        columnMappings: [],
+        warnings: ["Blank-row cleanup applied via full-row dedupe."],
+      },
+      notes: ["Deterministic clean."],
+    };
+  }
+
+  // formula_help doesn't produce a plan — let the conversational fallback handle it
   return null;
 }

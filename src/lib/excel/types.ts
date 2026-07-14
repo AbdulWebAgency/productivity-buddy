@@ -20,6 +20,12 @@ export const OpSchema = z.discriminatedUnion("op", [
     fileBIndex: z.number().int().min(0).default(1),
   }),
   z.object({
+    op: z.literal("intersection"),
+    keyColumn: z.string().min(1),
+    fileAIndex: z.number().int().min(0).default(0),
+    fileBIndex: z.number().int().min(0).default(1),
+  }),
+  z.object({
     op: z.literal("summary"),
     includeCharts: z.boolean().default(true),
   }),

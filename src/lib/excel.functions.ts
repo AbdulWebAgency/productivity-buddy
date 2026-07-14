@@ -239,6 +239,7 @@ type Op =
   | { "op": "merge", "keyColumn": string, "strategy": "union"|"intersection", "highlightUnmatched": boolean }
   | { "op": "dedupe", "strategy": "key"|"full_row", "keyColumn"?: string }
   | { "op": "diff", "keyColumn": string, "fileAIndex": number, "fileBIndex": number }
+  | { "op": "intersection", "keyColumn": string, "fileAIndex": number, "fileBIndex": number }
   | { "op": "summary", "includeCharts": boolean }
   | { "op": "recalc" }
   | { "op": "highlight_column", "column": string, "rule": "missing"|"duplicate"|"outlier" };

@@ -309,6 +309,42 @@ export function opDiff(
   };
 }
 
+export function opIntersection(
+  a: SheetGrid,
+  b: SheetGrid,
+  op: Extract<PlanOp, { op: "intersection" }>,
+  namesA: string,
+  namesB: string,
+): { grid: SheetGrid; stats: Record<string, number> } {
+  const kA = findColumnIndex(a.headers, op.keyColumn);
+  const kB = findColumnIndex(b.headers, op.keyColumn);
+  if (kA < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesA}`);
+  if (kB < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesB}`);
+
+  const keysB = new Set<string>();
+  for (const r of b.rows) {
+    const k = String(r[kB] ?? "").trim();
+    if (k) keysB.add(k);
+  }
+  const rows: CellValue[][] = [];
+  const emittedKeys = new Set<string>();
+  for (const r of a.rows) {
+    const k = String(r[kA] ?? "").trim();
+    if (k && keysB.has(k) && !emittedKeys.has(k)) {
+      emittedKeys.add(k);
+      rows.push(r);
+    }
+  }
+  return {
+    grid: { headers: a.headers, rows },
+    stats: {
+      inA: a.rows.length,
+      inB: b.rows.length,
+      common: rows.length,
+    },
+  };
+}
+
 export function opSummary(grid: SheetGrid): { headers: string[]; rows: CellValue[][] } {
   const rows: CellValue[][] = [
     ["Metric", "Value"],
@@ -519,6 +555,37 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
           fileB: nameB,
           ...d.stats,
           sheets: [sheetMissingA, sheetMissingB, ...(d.changed.rows.length ? ["Changed rows"] : [])],
+        });
+      } else if (op.op === "intersection") {
+        const aIdx = op.fileAIndex;
+        const bIdx = op.fileBIndex;
+        const a = grids[aIdx];
+        const b = grids[bIdx];
+        if (!a || !b) {
+          warnings.push(`intersection skipped: file index ${aIdx}/${bIdx} out of range`);
+          opLogs.push({ op: "intersection", status: "skipped", reason: "file index out of range" });
+          continue;
+        }
+        if (aIdx === bIdx) {
+          warnings.push("intersection skipped: same file on both sides");
+          opLogs.push({ op: "intersection", status: "skipped", reason: "same file on both sides" });
+          continue;
+        }
+        const nameA = files[aIdx].name;
+        const nameB = files[bIdx].name;
+        const inter = opIntersection(a, b, op, nameA, nameB);
+        const sheetName = "Common rows";
+        writeGridToSheet(outWb, sheetName, inter.grid);
+        producedSheets++;
+        opLogs.push({
+          op: "intersection",
+          status: "ok",
+          ms: Date.now() - started,
+          keyColumn: op.keyColumn,
+          fileA: nameA,
+          fileB: nameB,
+          ...inter.stats,
+          sheet: sheetName,
         });
       } else if (op.op === "summary") {
         const s = opSummary(currentGrid);

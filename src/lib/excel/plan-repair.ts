@@ -173,6 +173,32 @@ function normalizeOp(raw: unknown, files: FileForAi[], repairs: string[]): Loose
     return { op: "diff", keyColumn, fileAIndex: a, fileBIndex: b };
   }
 
+  if (tag === "intersection") {
+    const keyColumn = pickColumn();
+    if (!keyColumn) {
+      repairs.push("intersection op missing keyColumn — dropping");
+      return null;
+    }
+    let a =
+      resolveFileIndex(o.fileAIndex) ??
+      resolveFileIndex(o.fileIndexA) ??
+      resolveFileIndex(o.file1) ??
+      resolveFileIndex(o.fileA);
+    let b =
+      resolveFileIndex(o.fileBIndex) ??
+      resolveFileIndex(o.fileIndexB) ??
+      resolveFileIndex(o.file2) ??
+      resolveFileIndex(o.fileB);
+    if (a === undefined) a = 0;
+    if (b === undefined) b = a === 0 && files.length > 1 ? 1 : Math.max(0, files.length - 1);
+    if (a === b) {
+      repairs.push("intersection had identical file indices — using files 0 and 1");
+      a = 0;
+      b = 1;
+    }
+    return { op: "intersection", keyColumn, fileAIndex: a, fileBIndex: b };
+  }
+
   if (tag === "merge") {
     const keyColumn = pickColumn();
     if (!keyColumn) {

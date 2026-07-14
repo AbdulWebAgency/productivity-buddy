@@ -427,50 +427,121 @@ export type EngineResult = {
 
 export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineResult> {
   const warnings: string[] = [...plan.warnings];
-  const stats: Record<string, unknown> = { ops: [] as unknown[] };
+  const opLogs: unknown[] = [];
+  const stats: Record<string, unknown> = { ops: opLogs };
 
   const workbooks = await Promise.all(files.map((f) => readWorkbook(f.buffer)));
-  const firstSheets = workbooks.map((wb) => wb.worksheets[0]);
-  const grids = firstSheets.map((ws) => sheetToGrid(ws));
+  const grids = workbooks.map((wb) => sheetToGrid(wb.worksheets[0]));
 
-  // Start with the first workbook as base — preserves its styles.
-  const base = workbooks[0];
+  // Determine output strategy.
+  const hasMutating = plan.ops.some(
+    (o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column",
+  );
+  // Merge/dedupe/highlight can preserve first-workbook styling by mutating a
+  // copy of the first workbook. Diff/summary produce brand-new deliverables.
+  const outWb = hasMutating ? workbooks[0] : new ExcelJS.Workbook();
+  outWb.creator = "Ledgerly";
+  outWb.created = new Date();
 
   let currentGrid: SheetGrid = grids[0];
   let unmatched: Set<number> | undefined;
+  let producedSheets = 0;
 
-  for (const op of plan.ops) {
+  const startAll = Date.now();
+  for (let i = 0; i < plan.ops.length; i++) {
+    const op = plan.ops[i];
+    const started = Date.now();
+    const label = `op[${i}] ${op.op}`;
+    console.info(`[engine] ${label} starting`);
     try {
       if (op.op === "merge") {
+        if (grids.length < 2) {
+          warnings.push("merge skipped: needs ≥2 files");
+          opLogs.push({ op: "merge", status: "skipped", reason: "needs ≥2 files" });
+          continue;
+        }
         const merged = opMerge(grids, files.map((f) => f.name), op);
         currentGrid = { headers: merged.headers, rows: merged.rows };
         unmatched = merged.unmatchedRowSet;
-        (stats.ops as unknown[]).push({ op: "merge", ...merged.stats });
+        opLogs.push({
+          op: "merge",
+          status: "ok",
+          ms: Date.now() - started,
+          keyColumn: op.keyColumn,
+          ...merged.stats,
+        });
       } else if (op.op === "dedupe") {
         const { grid: dg, removed } = opDedupe(currentGrid, op);
         currentGrid = dg;
-        (stats.ops as unknown[]).push({ op: "dedupe", removed });
+        opLogs.push({
+          op: "dedupe",
+          status: "ok",
+          ms: Date.now() - started,
+          strategy: op.strategy,
+          keyColumn: op.keyColumn ?? null,
+          rowsIn: currentGrid.rows.length + removed,
+          rowsOut: currentGrid.rows.length,
+          duplicatesRemoved: removed,
+        });
       } else if (op.op === "diff") {
-        const a = grids[op.fileAIndex] ?? grids[0];
-        const b = grids[op.fileBIndex] ?? grids[1];
-        if (!a || !b) { warnings.push("Diff needs at least two input files."); continue; }
-        const d = opDiff(a, b, op, files[op.fileAIndex]?.name ?? "A", files[op.fileBIndex]?.name ?? "B");
-        writeGridToSheet(base, "Diff", { headers: d.headers, rows: d.rows });
-        (stats.ops as unknown[]).push({ op: "diff", ...d.stats });
+        const aIdx = op.fileAIndex;
+        const bIdx = op.fileBIndex;
+        const a = grids[aIdx];
+        const b = grids[bIdx];
+        if (!a || !b) {
+          warnings.push(`diff skipped: fileAIndex=${aIdx} or fileBIndex=${bIdx} out of range`);
+          opLogs.push({ op: "diff", status: "skipped", reason: "file index out of range" });
+          continue;
+        }
+        if (aIdx === bIdx) {
+          warnings.push("diff skipped: fileAIndex == fileBIndex");
+          opLogs.push({ op: "diff", status: "skipped", reason: "same file on both sides" });
+          continue;
+        }
+        const nameA = files[aIdx].name;
+        const nameB = files[bIdx].name;
+        const d = opDiff(a, b, op, nameA, nameB);
+        const sheetMissingA = `Missing in ${safeSheetName(nameA)}`;
+        const sheetMissingB = `Missing in ${safeSheetName(nameB)}`;
+        writeGridToSheet(outWb, sheetMissingA, d.missingInA);
+        writeGridToSheet(outWb, sheetMissingB, d.missingInB);
+        if (d.changed.rows.length > 0) {
+          writeGridToSheet(outWb, "Changed rows", d.changed);
+          producedSheets++;
+        }
+        producedSheets += 2;
+        opLogs.push({
+          op: "diff",
+          status: "ok",
+          ms: Date.now() - started,
+          keyColumn: op.keyColumn,
+          fileA: nameA,
+          fileB: nameB,
+          ...d.stats,
+          sheets: [sheetMissingA, sheetMissingB, ...(d.changed.rows.length ? ["Changed rows"] : [])],
+        });
       } else if (op.op === "summary") {
         const s = opSummary(currentGrid);
-        writeGridToSheet(base, "Summary", s);
-        (stats.ops as unknown[]).push({ op: "summary", metrics: s.rows.length });
+        writeGridToSheet(outWb, "Summary", s);
+        producedSheets++;
+        opLogs.push({
+          op: "summary",
+          status: "ok",
+          ms: Date.now() - started,
+          metrics: s.rows.length,
+          sheet: "Summary",
+        });
       } else if (op.op === "highlight_column") {
         const idx = findColumnIndex(currentGrid.headers, op.column);
         if (idx < 0) {
-          warnings.push(`highlight_column: column "${op.column}" not found`);
+          warnings.push(`highlight_column skipped: column "${op.column}" not found`);
+          opLogs.push({ op: "highlight_column", status: "skipped", reason: `column "${op.column}" not found` });
           continue;
         }
         const highlightRows = new Set<number>();
         if (op.rule === "missing") {
-          currentGrid.rows.forEach((r, i) => {
-            if (r[idx] == null || r[idx] === "") highlightRows.add(i);
+          currentGrid.rows.forEach((r, ri) => {
+            if (r[idx] == null || r[idx] === "") highlightRows.add(ri);
           });
         } else if (op.rule === "duplicate") {
           const counts = new Map<string, number>();
@@ -478,50 +549,78 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
             const k = String(r[idx] ?? "");
             counts.set(k, (counts.get(k) ?? 0) + 1);
           });
-          currentGrid.rows.forEach((r, i) => {
-            if ((counts.get(String(r[idx] ?? "")) ?? 0) > 1) highlightRows.add(i);
+          currentGrid.rows.forEach((r, ri) => {
+            if ((counts.get(String(r[idx] ?? "")) ?? 0) > 1) highlightRows.add(ri);
           });
         } else if (op.rule === "outlier") {
           const nums = currentGrid.rows.map((r) => Number(r[idx])).filter((n) => Number.isFinite(n));
           if (nums.length > 3) {
             const mean = nums.reduce((a, b) => a + b, 0) / nums.length;
             const sd = Math.sqrt(nums.reduce((a, b) => a + (b - mean) ** 2, 0) / nums.length);
-            currentGrid.rows.forEach((r, i) => {
+            currentGrid.rows.forEach((r, ri) => {
               const n = Number(r[idx]);
-              if (Number.isFinite(n) && Math.abs(n - mean) > 2 * sd) highlightRows.add(i);
+              if (Number.isFinite(n) && Math.abs(n - mean) > 2 * sd) highlightRows.add(ri);
             });
           }
         }
-        // Apply highlight to primary sheet (Result) later; store for now.
         unmatched = new Set([...(unmatched ?? []), ...highlightRows]);
-        (stats.ops as unknown[]).push({ op: "highlight_column", column: op.column, matches: highlightRows.size });
+        opLogs.push({
+          op: "highlight_column",
+          status: "ok",
+          ms: Date.now() - started,
+          column: op.column,
+          rule: op.rule,
+          matches: highlightRows.size,
+        });
       } else if (op.op === "recalc") {
-        const r = recalcFormulas(base);
-        (stats.ops as unknown[]).push({ op: "recalc", ...r });
+        const r = recalcFormulas(outWb);
+        opLogs.push({ op: "recalc", status: "ok", ms: Date.now() - started, ...r });
       }
+      console.info(`[engine] ${label} done in ${Date.now() - started}ms`);
     } catch (e) {
-      warnings.push(`${op.op} failed: ${e instanceof Error ? e.message : String(e)}`);
+      const msg = e instanceof Error ? e.message : String(e);
+      warnings.push(`${op.op} failed: ${msg}`);
+      opLogs.push({ op: op.op, status: "failed", ms: Date.now() - started, error: msg });
+      console.error(`[engine] ${label} failed: ${msg}`);
     }
   }
 
-  // Write final result sheet (unless only diff/summary ran on base directly).
-  const hasMergedOrDedup = plan.ops.some((o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column");
-  if (hasMergedOrDedup) {
-    writeGridToSheet(base, "Result", currentGrid, { highlightRows: unmatched });
-    // Move Result to first position
-    const resultWs = base.getWorksheet("Result");
+  if (hasMutating) {
+    writeGridToSheet(outWb, "Result", currentGrid, { highlightRows: unmatched });
+    producedSheets++;
+    const resultWs = outWb.getWorksheet("Result");
     if (resultWs) {
-      base.worksheets.splice(base.worksheets.indexOf(resultWs), 1);
-      base.worksheets.unshift(resultWs);
+      outWb.worksheets.splice(outWb.worksheets.indexOf(resultWs), 1);
+      outWb.worksheets.unshift(resultWs);
     }
   }
 
-  // Always recalc formulas at end for cleaner downloads.
-  if (!plan.ops.some((o) => o.op === "recalc")) {
-    const r = recalcFormulas(base);
-    (stats.ops as unknown[]).push({ op: "recalc_auto", ...r });
+  if (producedSheets === 0) {
+    // No op produced output; add an explicit info sheet instead of silently
+    // exporting the original file.
+    writeGridToSheet(outWb, "No output", {
+      headers: ["Notice"],
+      rows: [
+        ["No operation produced output. See warnings for details."],
+        ...warnings.map((w) => [w] as CellValue[]),
+      ],
+    });
+    warnings.push("No operation produced output.");
   }
 
-  const out = await base.xlsx.writeBuffer();
+  if (hasMutating && !plan.ops.some((o) => o.op === "recalc")) {
+    const r = recalcFormulas(outWb);
+    opLogs.push({ op: "recalc_auto", status: "ok", ...r });
+  }
+
+  stats.totalMs = Date.now() - startAll;
+  stats.producedSheets = producedSheets;
+
+  const out = await outWb.xlsx.writeBuffer();
   return { buffer: Buffer.from(out), stats, warnings };
+}
+
+function safeSheetName(name: string): string {
+  // Excel sheet names: max 31 chars, no : \ / ? * [ ]
+  return name.replace(/\.[^.]+$/, "").replace(/[\\/:?*[\]]/g, " ").slice(0, 25);
 }

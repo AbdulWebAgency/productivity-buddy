@@ -309,6 +309,42 @@ export function opDiff(
   };
 }
 
+export function opIntersection(
+  a: SheetGrid,
+  b: SheetGrid,
+  op: Extract<PlanOp, { op: "intersection" }>,
+  namesA: string,
+  namesB: string,
+): { grid: SheetGrid; stats: Record<string, number> } {
+  const kA = findColumnIndex(a.headers, op.keyColumn);
+  const kB = findColumnIndex(b.headers, op.keyColumn);
+  if (kA < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesA}`);
+  if (kB < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesB}`);
+
+  const keysB = new Set<string>();
+  for (const r of b.rows) {
+    const k = String(r[kB] ?? "").trim();
+    if (k) keysB.add(k);
+  }
+  const rows: CellValue[][] = [];
+  const emittedKeys = new Set<string>();
+  for (const r of a.rows) {
+    const k = String(r[kA] ?? "").trim();
+    if (k && keysB.has(k) && !emittedKeys.has(k)) {
+      emittedKeys.add(k);
+      rows.push(r);
+    }
+  }
+  return {
+    grid: { headers: a.headers, rows },
+    stats: {
+      inA: a.rows.length,
+      inB: b.rows.length,
+      common: rows.length,
+    },
+  };
+}
+
 export function opSummary(grid: SheetGrid): { headers: string[]; rows: CellValue[][] } {
   const rows: CellValue[][] = [
     ["Metric", "Value"],

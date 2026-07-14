@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { FileSpreadsheet, LogOut, Plus, ListChecks } from "lucide-react";
+import { FileSpreadsheet, LogOut, MessageSquare, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
 

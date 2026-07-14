@@ -16,6 +16,7 @@ import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticat
 import { Route as AuthenticatedAppWorkspacesRouteImport } from './routes/_authenticated/app.workspaces'
 import { Route as AuthenticatedAppNewRouteImport } from './routes/_authenticated/app.new'
 import { Route as AuthenticatedAppJobIdRouteImport } from './routes/_authenticated/app.$jobId'
+import { Route as AuthenticatedAppWWorkspaceIdRouteImport } from './routes/_authenticated/app.w.$workspaceId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -52,6 +53,12 @@ const AuthenticatedAppJobIdRoute = AuthenticatedAppJobIdRouteImport.update({
   path: '/app/$jobId',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppWWorkspaceIdRoute =
+  AuthenticatedAppWWorkspaceIdRouteImport.update({
+    id: '/app/w/$workspaceId',
+    path: '/app/w/$workspaceId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -60,6 +67,7 @@ export interface FileRoutesByFullPath {
   '/app/new': typeof AuthenticatedAppNewRoute
   '/app/workspaces': typeof AuthenticatedAppWorkspacesRoute
   '/app/': typeof AuthenticatedAppIndexRoute
+  '/app/w/$workspaceId': typeof AuthenticatedAppWWorkspaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -68,6 +76,7 @@ export interface FileRoutesByTo {
   '/app/new': typeof AuthenticatedAppNewRoute
   '/app/workspaces': typeof AuthenticatedAppWorkspacesRoute
   '/app': typeof AuthenticatedAppIndexRoute
+  '/app/w/$workspaceId': typeof AuthenticatedAppWWorkspaceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -78,6 +87,7 @@ export interface FileRoutesById {
   '/_authenticated/app/new': typeof AuthenticatedAppNewRoute
   '/_authenticated/app/workspaces': typeof AuthenticatedAppWorkspacesRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
+  '/_authenticated/app/w/$workspaceId': typeof AuthenticatedAppWWorkspaceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -88,8 +98,16 @@ export interface FileRouteTypes {
     | '/app/new'
     | '/app/workspaces'
     | '/app/'
+    | '/app/w/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/app/$jobId' | '/app/new' | '/app/workspaces' | '/app'
+  to:
+    | '/'
+    | '/auth'
+    | '/app/$jobId'
+    | '/app/new'
+    | '/app/workspaces'
+    | '/app'
+    | '/app/w/$workspaceId'
   id:
     | '__root__'
     | '/'
@@ -99,6 +117,7 @@ export interface FileRouteTypes {
     | '/_authenticated/app/new'
     | '/_authenticated/app/workspaces'
     | '/_authenticated/app/'
+    | '/_authenticated/app/w/$workspaceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -158,6 +177,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppJobIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/w/$workspaceId': {
+      id: '/_authenticated/app/w/$workspaceId'
+      path: '/app/w/$workspaceId'
+      fullPath: '/app/w/$workspaceId'
+      preLoaderRoute: typeof AuthenticatedAppWWorkspaceIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
@@ -166,6 +192,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppNewRoute: typeof AuthenticatedAppNewRoute
   AuthenticatedAppWorkspacesRoute: typeof AuthenticatedAppWorkspacesRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
+  AuthenticatedAppWWorkspaceIdRoute: typeof AuthenticatedAppWWorkspaceIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -173,6 +200,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppNewRoute: AuthenticatedAppNewRoute,
   AuthenticatedAppWorkspacesRoute: AuthenticatedAppWorkspacesRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
+  AuthenticatedAppWWorkspaceIdRoute: AuthenticatedAppWWorkspaceIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

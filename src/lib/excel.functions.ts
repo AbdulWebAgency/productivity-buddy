@@ -189,9 +189,6 @@ export const planJob = createServerFn({ method: "POST" })
     await supabase.from("excel_jobs").update({ status: "planning" }).eq("id", data.jobId);
 
     try {
-      const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
-      const { generateText, NoObjectGeneratedError } = await import("ai");
-
       const filesForAi = files.map((f, i) => {
         const parsed = SheetMetaSchema.safeParse(f.sheet_meta);
         return {
@@ -201,9 +198,30 @@ export const planJob = createServerFn({ method: "POST" })
         };
       });
 
-      // Flat catalog of every column across every file, with the exact strings
-      // the engine will match on. Helps the model pick real headers and the
-      // correct file indices for diff/merge.
+      // 1. Try deterministic planner first — skip AI when unambiguous.
+      const { tryDeterministicPlan } = await import("./excel/deterministic-plan");
+      const det = tryDeterministicPlan(job.intent, filesForAi);
+      if (det?.kind === "plan") {
+        const plan = { ...det.plan, warnings: [...det.plan.warnings, ...det.notes] };
+        await supabase
+          .from("excel_jobs")
+          .update({ ai_plan: plan, status: "queued", warnings: plan.warnings })
+          .eq("id", data.jobId);
+        return plan;
+      }
+      if (det?.kind === "needs_clarification") {
+        const msg = `${det.reason} Shared columns detected: ${det.sharedColumns.join(", ") || "(none)"}.`;
+        await supabase
+          .from("excel_jobs")
+          .update({ status: "failed", error: `Needs clarification: ${msg}` })
+          .eq("id", data.jobId);
+        throw new Error(msg);
+      }
+
+      // 2. Fall back to AI planner for ambiguous cases.
+      const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
+      const { generateText, NoObjectGeneratedError } = await import("ai");
+
       const columnCatalog = filesForAi.flatMap((f) =>
         f.sheets.flatMap((s) =>
           s.headers.map((h) => ({ fileIndex: f.index, fileName: f.name, sheet: s.name, column: h })),
@@ -212,8 +230,8 @@ export const planJob = createServerFn({ method: "POST" })
 
       const schemaGuide = `Return STRICT JSON matching this TypeScript type — no prose, no markdown, no code fences:
 {
-  "summary": string,                // <=500 chars, short human summary
-  "ops": Array<Op>,                 // 1..10 items, executed in order
+  "summary": string,
+  "ops": Array<Op>,
   "columnMappings": Array<{ canonical: string, perFile: Array<{ fileIndex: number, column: string }> }>,
   "warnings": string[]
 }
@@ -226,11 +244,11 @@ type Op =
   | { "op": "highlight_column", "column": string, "rule": "missing"|"duplicate"|"outlier" };
 
 Rules:
-- "op" values are lowercase and MUST be one of the tags above. No other ops exist.
-- To find rows in file B that are missing from file A, use op "diff" with fileAIndex=A, fileBIndex=B. The engine emits an "added" change for keys only in B.
-- keyColumn / column MUST match a header string from the column catalog exactly (case-insensitive, whitespace-normalized). Never invent columns or use file/sheet names as columns.
-- fileAIndex / fileBIndex refer to files[].index integers.
-- Do NOT emit fields like file1, file2, fileName, sheetName, primaryColumn, outputFileName, outputSheetName — they are not part of the schema.`;
+- "op" values are lowercase.
+- For "rows in B missing from A", use op "diff" with fileAIndex=A, fileBIndex=B — the engine emits a "Missing in A" sheet listing rows only in B.
+- keyColumn / column MUST match a header string from the column catalog exactly (case-insensitive).
+- fileAIndex / fileBIndex are integers (0-based) from files[].index.
+- Never invent columns, and never emit file1/file2/outputSheetName-style keys.`;
 
       const gateway = createLovableAiGatewayProvider(apiKey);
       const model = gateway("google/gemini-2.5-flash");
@@ -244,7 +262,7 @@ Rules:
       try {
         const result = await generateText({
           model,
-          system: `You are an Excel automation planner. Given uploaded workbooks and the user's intent, produce a strict plan of deterministic ops the engine can execute.\n\n${schemaGuide}`,
+          system: `You are an Excel automation planner. Produce a strict deterministic plan.\n\n${schemaGuide}`,
           prompt: promptPayload,
         });
         rawText = result.text;
@@ -255,6 +273,11 @@ Rules:
 
       const { repairAndParsePlan } = await import("./excel/plan-repair");
       const { plan, repairs } = repairAndParsePlan(rawText, filesForAi);
+      if (plan.ops.length === 0) {
+        throw new Error(
+          `AI planner produced no operations. Please rephrase your intent or specify the key column. Repairs: ${repairs.join("; ") || "none"}`,
+        );
+      }
       const mergedWarnings = [...(plan.warnings ?? []), ...repairs];
 
       await supabase
@@ -262,7 +285,6 @@ Rules:
         .update({ ai_plan: plan, status: "queued", warnings: mergedWarnings })
         .eq("id", data.jobId);
       return { ...plan, warnings: mergedWarnings };
-
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await supabase

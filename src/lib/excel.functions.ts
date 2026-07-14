@@ -190,7 +190,7 @@ export const planJob = createServerFn({ method: "POST" })
 
     try {
       const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
-      const { generateObject } = await import("ai");
+      const { generateText, NoObjectGeneratedError } = await import("ai");
 
       const filesForAi = files.map((f, i) => {
         const parsed = SheetMetaSchema.safeParse(f.sheet_meta);
@@ -201,20 +201,68 @@ export const planJob = createServerFn({ method: "POST" })
         };
       });
 
+      // Flat catalog of every column across every file, with the exact strings
+      // the engine will match on. Helps the model pick real headers and the
+      // correct file indices for diff/merge.
+      const columnCatalog = filesForAi.flatMap((f) =>
+        f.sheets.flatMap((s) =>
+          s.headers.map((h) => ({ fileIndex: f.index, fileName: f.name, sheet: s.name, column: h })),
+        ),
+      );
+
+      const schemaGuide = `Return STRICT JSON matching this TypeScript type — no prose, no markdown, no code fences:
+{
+  "summary": string,                // <=500 chars, short human summary
+  "ops": Array<Op>,                 // 1..10 items, executed in order
+  "columnMappings": Array<{ canonical: string, perFile: Array<{ fileIndex: number, column: string }> }>,
+  "warnings": string[]
+}
+type Op =
+  | { "op": "merge", "keyColumn": string, "strategy": "union"|"intersection", "highlightUnmatched": boolean }
+  | { "op": "dedupe", "strategy": "key"|"full_row", "keyColumn"?: string }
+  | { "op": "diff", "keyColumn": string, "fileAIndex": number, "fileBIndex": number }
+  | { "op": "summary", "includeCharts": boolean }
+  | { "op": "recalc" }
+  | { "op": "highlight_column", "column": string, "rule": "missing"|"duplicate"|"outlier" };
+
+Rules:
+- "op" values are lowercase and MUST be one of the tags above. No other ops exist.
+- To find rows in file B that are missing from file A, use op "diff" with fileAIndex=A, fileBIndex=B. The engine emits an "added" change for keys only in B.
+- keyColumn / column MUST match a header string from the column catalog exactly (case-insensitive, whitespace-normalized). Never invent columns or use file/sheet names as columns.
+- fileAIndex / fileBIndex refer to files[].index integers.
+- Do NOT emit fields like file1, file2, fileName, sheetName, primaryColumn, outputFileName, outputSheetName — they are not part of the schema.`;
+
       const gateway = createLovableAiGatewayProvider(apiKey);
-      const { object } = await generateObject({
-        model: gateway("google/gemini-2.5-flash"),
-        schema: PlanSchema,
-        system:
-          "You are an Excel automation planner. Given uploaded workbooks and the user's intent, produce a strict plan of deterministic ops the engine can execute. Use headers exactly as they appear. Prefer merge > dedupe > highlight order. Only use column names that actually exist in at least one file. Add warnings for anything ambiguous.",
-        prompt: JSON.stringify({ intent: job.intent ?? "Auto-merge and dedupe reasonable data.", files: filesForAi }),
+      const model = gateway("google/gemini-2.5-flash");
+      const promptPayload = JSON.stringify({
+        intent: job.intent ?? "Auto-merge and dedupe reasonable data.",
+        files: filesForAi,
+        columnCatalog,
       });
+
+      let rawText = "";
+      try {
+        const result = await generateText({
+          model,
+          system: `You are an Excel automation planner. Given uploaded workbooks and the user's intent, produce a strict plan of deterministic ops the engine can execute.\n\n${schemaGuide}`,
+          prompt: promptPayload,
+        });
+        rawText = result.text;
+      } catch (e) {
+        if (NoObjectGeneratedError.isInstance(e)) rawText = e.text ?? "";
+        else throw e;
+      }
+
+      const { repairAndParsePlan } = await import("./excel/plan-repair");
+      const { plan, repairs } = repairAndParsePlan(rawText, filesForAi);
+      const mergedWarnings = [...(plan.warnings ?? []), ...repairs];
 
       await supabase
         .from("excel_jobs")
-        .update({ ai_plan: object, status: "queued", warnings: object.warnings })
+        .update({ ai_plan: plan, status: "queued", warnings: mergedWarnings })
         .eq("id", data.jobId);
-      return object;
+      return { ...plan, warnings: mergedWarnings };
+
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       await supabase

@@ -34,7 +34,7 @@ export const OpSchema = z.discriminatedUnion("op", [
 ]);
 
 export const PlanSchema = z.object({
-  summary: z.string().max(500),
+  summary: z.string().max(500).default(""),
   ops: z.array(OpSchema).min(1).max(10),
   columnMappings: z
     .array(

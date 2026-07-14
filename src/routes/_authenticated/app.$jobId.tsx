@@ -21,7 +21,34 @@ import {
 
 export const Route = createFileRoute("/_authenticated/app/$jobId")({
   component: JobDetail,
+  errorComponent: JobErrorFallback,
+  notFoundComponent: JobErrorFallback,
 });
+
+function JobErrorFallback() {
+  const { jobId } = Route.useParams();
+  return (
+    <div className="mx-auto max-w-2xl p-6 space-y-4">
+      <h1 className="text-xl font-semibold">This job isn't available</h1>
+      <p className="text-muted-foreground">
+        The ID <code className="text-xs">{jobId}</code> doesn't match a legacy job. If you
+        opened this from a workspace, use the workspace view instead.
+      </p>
+      <div className="flex gap-2">
+        <Link
+          to="/app/w/$workspaceId"
+          params={{ workspaceId: jobId }}
+          className="inline-flex items-center px-3 py-2 rounded-md border text-sm"
+        >
+          Open as workspace
+        </Link>
+        <Link to="/app" className="inline-flex items-center px-3 py-2 rounded-md border text-sm">
+          Back to jobs
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 function JobDetail() {
   const { jobId } = Route.useParams();

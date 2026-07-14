@@ -17,7 +17,7 @@ export const OpSchema = z.discriminatedUnion("op", [
     op: z.literal("diff"),
     keyColumn: z.string().min(1),
     fileAIndex: z.number().int().min(0).default(0),
-    fileBIndex: z.number().int().min(1).default(1),
+    fileBIndex: z.number().int().min(0).default(1),
   }),
   z.object({
     op: z.literal("summary"),

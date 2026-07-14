@@ -13,8 +13,10 @@ import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
+import { Route as AuthenticatedAppWorkspacesRouteImport } from './routes/_authenticated/app.workspaces'
 import { Route as AuthenticatedAppNewRouteImport } from './routes/_authenticated/app.new'
 import { Route as AuthenticatedAppJobIdRouteImport } from './routes/_authenticated/app.$jobId'
+import { Route as AuthenticatedAppWWorkspaceIdRouteImport } from './routes/_authenticated/app.w.$workspaceId'
 
 const AuthRoute = AuthRouteImport.update({
   id: '/auth',
@@ -35,6 +37,12 @@ const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   path: '/app/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppWorkspacesRoute =
+  AuthenticatedAppWorkspacesRouteImport.update({
+    id: '/app/workspaces',
+    path: '/app/workspaces',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedAppNewRoute = AuthenticatedAppNewRouteImport.update({
   id: '/app/new',
   path: '/app/new',
@@ -45,20 +53,30 @@ const AuthenticatedAppJobIdRoute = AuthenticatedAppJobIdRouteImport.update({
   path: '/app/$jobId',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedAppWWorkspaceIdRoute =
+  AuthenticatedAppWWorkspaceIdRouteImport.update({
+    id: '/app/w/$workspaceId',
+    path: '/app/w/$workspaceId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/app/$jobId': typeof AuthenticatedAppJobIdRoute
   '/app/new': typeof AuthenticatedAppNewRoute
+  '/app/workspaces': typeof AuthenticatedAppWorkspacesRoute
   '/app/': typeof AuthenticatedAppIndexRoute
+  '/app/w/$workspaceId': typeof AuthenticatedAppWWorkspaceIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
   '/app/$jobId': typeof AuthenticatedAppJobIdRoute
   '/app/new': typeof AuthenticatedAppNewRoute
+  '/app/workspaces': typeof AuthenticatedAppWorkspacesRoute
   '/app': typeof AuthenticatedAppIndexRoute
+  '/app/w/$workspaceId': typeof AuthenticatedAppWWorkspaceIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -67,13 +85,29 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/_authenticated/app/$jobId': typeof AuthenticatedAppJobIdRoute
   '/_authenticated/app/new': typeof AuthenticatedAppNewRoute
+  '/_authenticated/app/workspaces': typeof AuthenticatedAppWorkspacesRoute
   '/_authenticated/app/': typeof AuthenticatedAppIndexRoute
+  '/_authenticated/app/w/$workspaceId': typeof AuthenticatedAppWWorkspaceIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/auth' | '/app/$jobId' | '/app/new' | '/app/'
+  fullPaths:
+    | '/'
+    | '/auth'
+    | '/app/$jobId'
+    | '/app/new'
+    | '/app/workspaces'
+    | '/app/'
+    | '/app/w/$workspaceId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/app/$jobId' | '/app/new' | '/app'
+  to:
+    | '/'
+    | '/auth'
+    | '/app/$jobId'
+    | '/app/new'
+    | '/app/workspaces'
+    | '/app'
+    | '/app/w/$workspaceId'
   id:
     | '__root__'
     | '/'
@@ -81,7 +115,9 @@ export interface FileRouteTypes {
     | '/auth'
     | '/_authenticated/app/$jobId'
     | '/_authenticated/app/new'
+    | '/_authenticated/app/workspaces'
     | '/_authenticated/app/'
+    | '/_authenticated/app/w/$workspaceId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -120,6 +156,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/workspaces': {
+      id: '/_authenticated/app/workspaces'
+      path: '/app/workspaces'
+      fullPath: '/app/workspaces'
+      preLoaderRoute: typeof AuthenticatedAppWorkspacesRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/app/new': {
       id: '/_authenticated/app/new'
       path: '/app/new'
@@ -134,19 +177,30 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppJobIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/app/w/$workspaceId': {
+      id: '/_authenticated/app/w/$workspaceId'
+      path: '/app/w/$workspaceId'
+      fullPath: '/app/w/$workspaceId'
+      preLoaderRoute: typeof AuthenticatedAppWWorkspaceIdRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
   }
 }
 
 interface AuthenticatedRouteRouteChildren {
   AuthenticatedAppJobIdRoute: typeof AuthenticatedAppJobIdRoute
   AuthenticatedAppNewRoute: typeof AuthenticatedAppNewRoute
+  AuthenticatedAppWorkspacesRoute: typeof AuthenticatedAppWorkspacesRoute
   AuthenticatedAppIndexRoute: typeof AuthenticatedAppIndexRoute
+  AuthenticatedAppWWorkspaceIdRoute: typeof AuthenticatedAppWWorkspaceIdRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedAppJobIdRoute: AuthenticatedAppJobIdRoute,
   AuthenticatedAppNewRoute: AuthenticatedAppNewRoute,
+  AuthenticatedAppWorkspacesRoute: AuthenticatedAppWorkspacesRoute,
   AuthenticatedAppIndexRoute: AuthenticatedAppIndexRoute,
+  AuthenticatedAppWWorkspaceIdRoute: AuthenticatedAppWWorkspaceIdRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

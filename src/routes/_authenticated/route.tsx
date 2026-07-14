@@ -1,6 +1,6 @@
 import { createFileRoute, Outlet, redirect, Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { supabase } from "@/integrations/supabase/client";
-import { FileSpreadsheet, LogOut, Plus, ListChecks } from "lucide-react";
+import { FileSpreadsheet, LogOut, MessageSquare, ListChecks } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -31,18 +31,18 @@ function ProtectedLayout() {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
-          <Link to="/app" className="flex items-center gap-2 font-serif text-lg">
+          <Link to="/app/workspaces" className="flex items-center gap-2 font-serif text-lg">
             <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
               <FileSpreadsheet className="h-4 w-4" />
             </span>
             Ledgerly
           </Link>
           <nav className="flex items-center gap-1">
-            <Button asChild variant={pathname === "/app" ? "secondary" : "ghost"} size="sm">
-              <Link to="/app"><ListChecks className="mr-2 h-4 w-4" />Jobs</Link>
+            <Button asChild variant={pathname.startsWith("/app/workspaces") || pathname.startsWith("/app/w/") ? "secondary" : "ghost"} size="sm">
+              <Link to="/app/workspaces"><MessageSquare className="mr-2 h-4 w-4" />Workspaces</Link>
             </Button>
-            <Button asChild variant={pathname === "/app/new" ? "secondary" : "ghost"} size="sm">
-              <Link to="/app/new"><Plus className="mr-2 h-4 w-4" />New</Link>
+            <Button asChild variant={pathname === "/app" ? "secondary" : "ghost"} size="sm">
+              <Link to="/app"><ListChecks className="mr-2 h-4 w-4" />Legacy jobs</Link>
             </Button>
           </nav>
           <div className="flex items-center gap-3">

@@ -239,47 +239,73 @@ export function opDedupe(
   return { grid: { headers: grid.headers, rows: kept }, removed };
 }
 
+export type DiffResult = {
+  missingInA: SheetGrid; // rows present in B but not A (add to A)
+  missingInB: SheetGrid; // rows present in A but not B
+  changed: SheetGrid;
+  stats: {
+    comparedA: number;
+    comparedB: number;
+    missingInA: number;
+    missingInB: number;
+    changed: number;
+  };
+};
+
 export function opDiff(
   a: SheetGrid,
   b: SheetGrid,
   op: Extract<PlanOp, { op: "diff" }>,
   namesA: string,
   namesB: string,
-): { headers: string[]; rows: CellValue[][]; stats: Record<string, number> } {
+): DiffResult {
   const kA = findColumnIndex(a.headers, op.keyColumn);
   const kB = findColumnIndex(b.headers, op.keyColumn);
-  if (kA < 0 || kB < 0) throw new Error(`Key column "${op.keyColumn}" not in both files`);
-  const mapA = new Map(a.rows.map((r) => [String(r[kA] ?? ""), r]));
-  const mapB = new Map(b.rows.map((r) => [String(r[kB] ?? ""), r]));
+  if (kA < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesA}`);
+  if (kB < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesB}`);
 
-  const rows: CellValue[][] = [];
-  let added = 0,
-    removed = 0,
-    changed = 0;
+  const mapA = new Map<string, CellValue[]>();
+  for (const r of a.rows) {
+    const k = String(r[kA] ?? "").trim();
+    if (k) mapA.set(k, r);
+  }
+  const mapB = new Map<string, CellValue[]>();
+  for (const r of b.rows) {
+    const k = String(r[kB] ?? "").trim();
+    if (k) mapB.set(k, r);
+  }
+
+  const missingInA: CellValue[][] = [];
+  const missingInB: CellValue[][] = [];
+  const changed: CellValue[][] = [];
 
   for (const [key, rowB] of mapB) {
-    if (!mapA.has(key)) {
-      rows.push([key, "added", `Only in ${namesB}`, JSON.stringify(rowB)]);
-      added++;
-    } else {
+    if (!mapA.has(key)) missingInA.push(rowB);
+    else {
       const rowA = mapA.get(key)!;
-      const equal = JSON.stringify(rowA) === JSON.stringify(rowB);
-      if (!equal) {
-        rows.push([key, "changed", "Values differ", JSON.stringify({ a: rowA, b: rowB })]);
-        changed++;
+      if (JSON.stringify(rowA) !== JSON.stringify(rowB)) {
+        changed.push([key, JSON.stringify(rowA), JSON.stringify(rowB)]);
       }
     }
   }
   for (const [key, rowA] of mapA) {
-    if (!mapB.has(key)) {
-      rows.push([key, "removed", `Only in ${namesA}`, JSON.stringify(rowA)]);
-      removed++;
-    }
+    if (!mapB.has(key)) missingInB.push(rowA);
   }
+
   return {
-    headers: [op.keyColumn, "change", "note", "detail"],
-    rows,
-    stats: { added, removed, changed },
+    missingInA: { headers: b.headers, rows: missingInA },
+    missingInB: { headers: a.headers, rows: missingInB },
+    changed: {
+      headers: [op.keyColumn, `Values in ${namesA}`, `Values in ${namesB}`],
+      rows: changed,
+    },
+    stats: {
+      comparedA: mapA.size,
+      comparedB: mapB.size,
+      missingInA: missingInA.length,
+      missingInB: missingInB.length,
+      changed: changed.length,
+    },
   };
 }
 

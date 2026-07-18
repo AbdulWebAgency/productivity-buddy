@@ -247,5 +247,34 @@ function normalizeOp(raw: unknown, files: FileForAi[], repairs: string[]): Loose
     return { op: "recalc" };
   }
 
+  if (tag === "master_merge") {
+    const keyColumn = pickColumn();
+    if (!keyColumn) {
+      repairs.push("master_merge missing keyColumn — dropping");
+      return null;
+    }
+    const jt = String(o.joinType ?? o.join ?? "outer").toLowerCase();
+    const joinType = ["outer", "inner", "left", "append"].includes(jt) ? jt : "outer";
+    const ds = String(o.dupeStrategy ?? o.duplicates ?? "first").toLowerCase();
+    const dupeStrategy = ["first", "latest", "merge"].includes(ds) ? ds : "first";
+    return { op: "master_merge", keyColumn, joinType, dupeStrategy };
+  }
+
+  if (tag === "bulk_lookup") {
+    const fi = resolveFileIndex(o.fileIndex) ?? resolveFileIndex(o.file) ?? 0;
+    const qRaw = o.queries ?? o.values ?? o.ids ?? [];
+    const queries = Array.isArray(qRaw)
+      ? qRaw.map((v) => String(v)).filter((s) => s.trim().length > 0)
+      : typeof qRaw === "string"
+        ? qRaw.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean)
+        : [];
+    if (queries.length === 0) {
+      repairs.push("bulk_lookup missing queries — dropping");
+      return null;
+    }
+    return { op: "bulk_lookup", fileIndex: fi, queries };
+  }
+
+
   return null;
 }

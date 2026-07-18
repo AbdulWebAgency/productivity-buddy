@@ -75,15 +75,16 @@ function pickBestKey(
   shared: { display: string; perFile: string[] }[],
   preferred?: string | null,
 ): { key: string | null; tiedCandidates: string[] } {
-  if (shared.length === 0) return { key: null, tiedCandidates: [] };
-
+  // A user-supplied preferred key ALWAYS wins, even if no headers overlap
+  // exactly across all files — the engine's fuzzy resolver handles per-file
+  // header variance.
   if (preferred) {
     const match = shared.find((s) => norm(s.display) === norm(preferred));
     if (match) return { key: match.display, tiedCandidates: [] };
-    // Preferred not in shared — still return it; engine's fuzzy findColumnIndex
-    // will try to resolve per file.
     return { key: preferred, tiedCandidates: [] };
   }
+
+  if (shared.length === 0) return { key: null, tiedCandidates: [] };
 
   if (shared.length === 1) return { key: shared[0].display, tiedCandidates: [] };
 

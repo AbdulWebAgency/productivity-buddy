@@ -423,9 +423,16 @@ function describePlan(plan: Plan): string {
     else if (op.op === "highlight_column")
       lines.push(`• Highlight ${op.rule} values in **${op.column}**`);
     else if (op.op === "recalc") lines.push(`• Recalculate formulas`);
+    else if (op.op === "master_merge")
+      lines.push(
+        `• Build a **master sheet** across all files on **${op.keyColumn}** (${op.joinType} join, keep ${op.dupeStrategy})`,
+      );
+    else if (op.op === "bulk_lookup")
+      lines.push(`• Bulk lookup of **${op.queries.length}** value(s) in file #${op.fileIndex + 1}`);
   }
   return lines.join("\n");
 }
+
 
 // ---------- Run plan → new version ----------
 

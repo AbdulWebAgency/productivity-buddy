@@ -256,18 +256,19 @@ export function tryDeterministicPlan(
         pendingIntent: "master_merge",
       };
     }
-    const jt = /\bappend\b/i.test(trimmed)
+    const jt: "outer" | "inner" | "left" | "append" = /\bappend\b/i.test(trimmed)
       ? "append"
       : /\binner\s*join\b|\bkeep\s+(only\s+)?common\b/i.test(trimmed)
         ? "inner"
         : /\bleft\s*join\b/i.test(trimmed)
           ? "left"
           : "outer";
-    const ds = /\bkeep\s+latest\b|\blast\s+wins\b/i.test(trimmed)
+    const ds: "first" | "latest" | "merge" = /\bkeep\s+latest\b|\blast\s+wins\b/i.test(trimmed)
       ? "latest"
       : /\bmerge\s+dup|\bcombine\s+dup/i.test(trimmed)
         ? "merge"
         : "first";
+
     return {
       kind: "plan",
       intent: "master_merge",

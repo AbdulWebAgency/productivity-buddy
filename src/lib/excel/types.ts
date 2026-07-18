@@ -37,6 +37,18 @@ export const OpSchema = z.discriminatedUnion("op", [
     column: z.string().min(1),
     rule: z.enum(["missing", "duplicate", "outlier"]),
   }),
+  z.object({
+    op: z.literal("master_merge"),
+    keyColumn: z.string().min(1),
+    joinType: z.enum(["outer", "inner", "left", "append"]).default("outer"),
+    dupeStrategy: z.enum(["first", "latest", "merge"]).default("first"),
+  }),
+  z.object({
+    op: z.literal("bulk_lookup"),
+    fileIndex: z.number().int().min(0).default(0),
+    queries: z.array(z.string().min(1)).min(1).max(5000),
+  }),
+
 ]);
 
 export const PlanSchema = z.object({

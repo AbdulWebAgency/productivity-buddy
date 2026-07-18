@@ -46,9 +46,18 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
       lines.push(`• Found ${op.common ?? 0} rows present in both files (matched on "${op.keyColumn}").`);
     } else if (op.op === "summary") {
       lines.push(`• Generated a summary sheet.`);
+    } else if (op.op === "master_merge") {
+      lines.push(
+        `• Built master sheet on "${op.keyColumn}" — ${op.rows ?? 0} rows across ${op.files ?? 0} files (${op.joinType}${op.duplicates ? `, ${op.duplicates} duplicate keys` : ""}).`,
+      );
+    } else if (op.op === "bulk_lookup") {
+      lines.push(
+        `• Bulk lookup: ${op.matched ?? 0}/${op.queries ?? 0} matched (${op.notFound ?? 0} not found, ${op.rowsReturned ?? 0} rows returned).`,
+      );
     } else {
       lines.push(`• Ran ${op.op}.`);
     }
+
   }
   if (warnings.length) lines.push(`\nNotes: ${warnings.join("; ")}`);
   return lines.join("\n") || "Done.";

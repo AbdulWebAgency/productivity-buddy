@@ -5,12 +5,15 @@ export type Intent =
   | "intersection" // rows in both datasets
   | "difference" // rows only in one (either direction, or specified side)
   | "merge" // union across files on a key
+  | "master_merge" // multi-file master sheet
+  | "bulk_lookup" // look up a pasted list of IDs/names/emails
   | "dedupe"
   | "summary"
   | "clean"
   | "formula_help"
   | "capabilities" // "what can you do"
   | "unknown";
+
 
 export type IntentMatch = {
   intent: Intent;
@@ -43,9 +46,20 @@ const PATTERNS: { intent: Intent; side?: IntentMatch["side"]; re: RegExp }[] = [
   { intent: "difference", re: /\b(difference|differ|diff|compare)\b/i },
   { intent: "difference", re: /\bwhich\s+(students|rows|records|people).*(missing|absent|not)\b/i },
 
+  // Master sheet — put BEFORE merge so it wins over "merge everything"
+  { intent: "master_merge", re: /\b(master\s*sheet|master\s*workbook|master\s*list)\b/i },
+  { intent: "master_merge", re: /\b(combine|merge)\s+(all|every|the)?\s*(files|workbooks|sheets)\b/i },
+  { intent: "master_merge", re: /\b(build|create|make)\s+(a\s+)?master\b/i },
+
+  // Bulk lookup
+  { intent: "bulk_lookup", re: /\bbulk\s*(lookup|search|find|match)\b/i },
+  { intent: "bulk_lookup", re: /\blook\s*up\s+(these|the\s+following|this\s+list)\b/i },
+  { intent: "bulk_lookup", re: /\b(find|search)\s+(these|the\s+following)\s+(ids|emails|names|records|people)\b/i },
+
   // Merge
   { intent: "merge", re: /\b(merge|combine|consolidate|join|unify|union)\b/i },
   { intent: "merge", re: /\bappend\b/i },
+
 
   // Dedupe
   { intent: "dedupe", re: /\b(dedup|deduplicate|duplicate|duplicates|unique|uniq)\b/i },

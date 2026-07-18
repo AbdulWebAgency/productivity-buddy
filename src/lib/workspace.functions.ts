@@ -318,10 +318,13 @@ export const sendMessage = createServerFn({ method: "POST" })
         | "intersection"
         | "difference"
         | "merge"
+        | "master_merge"
+        | "bulk_lookup"
         | "dedupe"
         | "summary"
         | "clean"
         | undefined,
+
       resumeSide: pending?.pendingSide,
       preferredKey,
     });

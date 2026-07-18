@@ -67,7 +67,10 @@ const KNOWN_OPS = new Set([
   "summary",
   "recalc",
   "highlight_column",
+  "master_merge",
+  "bulk_lookup",
 ]);
+
 
 function normalizePlan(input: unknown, files: FileForAi[], repairs: string[]): LooseObj {
   const plan: LooseObj = isObj(input) ? { ...input } : {};

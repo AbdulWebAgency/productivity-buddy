@@ -31,6 +31,19 @@ export function suggestActions(input: SuggestionInput): Suggestion[] {
   const key = firstKey(input.files);
   const shared = sharedHeaders(input.files);
 
+  if (input.files.length >= 2) {
+    out.push({
+      label: `Create Master Sheet`,
+      prompt: `Create a master sheet by merging all uploaded files.`,
+    });
+  }
+  if (input.files.length >= 1) {
+    const target = input.files[input.files.length - 1]?.name ?? "file";
+    out.push({
+      label: `Bulk Lookup`,
+      prompt: `Bulk lookup in ${target}:\n`,
+    });
+  }
   if (input.files.length >= 2 && (key || shared.length)) {
     const on = key ?? shared[0];
     out.push({
@@ -42,6 +55,7 @@ export function suggestActions(input: SuggestionInput): Suggestion[] {
       prompt: `Merge all files on ${on} and highlight rows only present in one file.`,
     });
   }
+
   if (input.files.some((f) => (f.inspector?.sheets[0]?.duplicateKeyValues ?? 0) > 0)) {
     out.push({
       label: `Remove duplicate rows`,

@@ -5,12 +5,15 @@ export type Intent =
   | "intersection" // rows in both datasets
   | "difference" // rows only in one (either direction, or specified side)
   | "merge" // union across files on a key
+  | "master_merge" // multi-file master sheet
+  | "bulk_lookup" // look up a pasted list of IDs/names/emails
   | "dedupe"
   | "summary"
   | "clean"
   | "formula_help"
   | "capabilities" // "what can you do"
   | "unknown";
+
 
 export type IntentMatch = {
   intent: Intent;

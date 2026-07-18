@@ -880,7 +880,53 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
       } else if (op.op === "recalc") {
         const r = recalcFormulas(outWb);
         opLogs.push({ op: "recalc", status: "ok", ms: Date.now() - started, ...r });
+      } else if (op.op === "master_merge") {
+        if (grids.length < 2) {
+          warnings.push("master_merge skipped: needs ≥2 files");
+          opLogs.push({ op: "master_merge", status: "skipped", reason: "needs ≥2 files" });
+          continue;
+        }
+        const m = opMasterMerge(grids, files.map((f) => f.name), op);
+        writeGridToSheet(outWb, "Master", m.master);
+        producedSheets++;
+        writeGridToSheet(outWb, "Merge Summary", m.summary);
+        producedSheets++;
+        for (const mp of m.missingPerFile) {
+          if (mp.keys.length === 0) continue;
+          const sheetName = safeSheetName(`Missing in ${mp.fileName}`);
+          writeGridToSheet(outWb, sheetName, {
+            headers: [op.keyColumn],
+            rows: mp.keys.map((k) => [k]),
+          });
+          producedSheets++;
+        }
+        opLogs.push({
+          op: "master_merge",
+          status: "ok",
+          ms: Date.now() - started,
+          keyColumn: op.keyColumn,
+          ...m.stats,
+        });
+      } else if (op.op === "bulk_lookup") {
+        const targetGrid = grids[op.fileIndex];
+        if (!targetGrid) {
+          warnings.push(`bulk_lookup skipped: fileIndex ${op.fileIndex} out of range`);
+          opLogs.push({ op: "bulk_lookup", status: "skipped", reason: "file index out of range" });
+          continue;
+        }
+        const r = opBulkLookup(targetGrid, op);
+        writeGridToSheet(outWb, "Results", r.results);
+        writeGridToSheet(outWb, "Not Found", r.notFound);
+        producedSheets += 2;
+        opLogs.push({
+          op: "bulk_lookup",
+          status: "ok",
+          ms: Date.now() - started,
+          file: files[op.fileIndex]?.name,
+          ...r.stats,
+        });
       }
+
       console.info(`[engine] ${label} done in ${Date.now() - started}ms`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);

@@ -236,6 +236,100 @@ export function tryDeterministicPlan(
     };
   }
 
+  if (effectiveIntent === "master_merge") {
+    if (files.length < 2) {
+      return {
+        kind: "needs_clarification",
+        reason: "Upload at least 2 files before creating a master sheet.",
+        sharedColumns: sharedNames,
+        candidateKeys: [],
+        pendingIntent: "master_merge",
+      };
+    }
+    const { key, tied } = buildKeyOp();
+    if (!key) {
+      return {
+        kind: "needs_clarification",
+        reason: `Which column should I use as the master key across all ${files.length} files?`,
+        sharedColumns: sharedNames,
+        candidateKeys: tied,
+        pendingIntent: "master_merge",
+      };
+    }
+    const jt = /\bappend\b/i.test(trimmed)
+      ? "append"
+      : /\binner\s*join\b|\bkeep\s+(only\s+)?common\b/i.test(trimmed)
+        ? "inner"
+        : /\bleft\s*join\b/i.test(trimmed)
+          ? "left"
+          : "outer";
+    const ds = /\bkeep\s+latest\b|\blast\s+wins\b/i.test(trimmed)
+      ? "latest"
+      : /\bmerge\s+dup|\bcombine\s+dup/i.test(trimmed)
+        ? "merge"
+        : "first";
+    return {
+      kind: "plan",
+      intent: "master_merge",
+      plan: {
+        summary: `Create master sheet across ${files.length} files on "${key}" (${jt}, keep ${ds}).`,
+        ops: [{ op: "master_merge", keyColumn: key, joinType: jt, dupeStrategy: ds }],
+        columnMappings: [],
+        warnings: [],
+      },
+      notes: [`Master merge on "${key}" (${jt}).`],
+    };
+  }
+
+  if (effectiveIntent === "bulk_lookup") {
+    // Parse queries from the raw text: everything after the first newline, or
+    // comma/whitespace-separated tokens on the same line after the trigger phrase.
+    const lines = trimmed.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+    let queries: string[] = [];
+    let targetName: string | null = null;
+    const firstLine = lines[0] ?? "";
+    const inMatch = firstLine.match(/\bin\s+([^\n:]+?)(?::|$)/i);
+    if (inMatch) targetName = inMatch[1].trim();
+    if (lines.length > 1) {
+      queries = lines.slice(1).flatMap((l) => l.split(/[,;\t]+/).map((s) => s.trim())).filter(Boolean);
+    } else {
+      const after = firstLine.split(/[:\-–]\s*/).slice(1).join(" ");
+      queries = after
+        .split(/[,;\s]+/)
+        .map((s) => s.trim())
+        .filter((s) => s && !/^(in|from|the|file)$/i.test(s));
+    }
+    // pick file: named or default to last (most recent upload)
+    let fileIndex = files.length - 1;
+    if (targetName) {
+      const tn = norm(targetName);
+      const hit = files.find((f) => norm(f.name).includes(tn) || tn.includes(norm(f.name)));
+      if (hit) fileIndex = hit.index;
+    }
+    if (queries.length === 0) {
+      return {
+        kind: "needs_clarification",
+        reason:
+          "Paste the IDs, names, or emails to look up — one per line — after the request. Example:\n\nBulk lookup in students.xlsx:\nABC001\nABC002",
+        sharedColumns: sharedNames,
+        candidateKeys: [],
+        pendingIntent: "bulk_lookup",
+      };
+    }
+    return {
+      kind: "plan",
+      intent: "bulk_lookup",
+      plan: {
+        summary: `Bulk lookup of ${queries.length} value(s) in "${files[fileIndex]?.name ?? "file"}".`,
+        ops: [{ op: "bulk_lookup", fileIndex, queries }],
+        columnMappings: [],
+        warnings: [],
+      },
+      notes: [`Bulk lookup (${queries.length} queries).`],
+    };
+  }
+
+
   if (effectiveIntent === "dedupe") {
     const { key } = buildKeyOp();
     const ops: PlanOp[] = key

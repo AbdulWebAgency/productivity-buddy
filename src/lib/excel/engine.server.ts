@@ -365,6 +365,244 @@ export function opSummary(grid: SheetGrid): { headers: string[]; rows: CellValue
   return { headers: rows[0].map(String), rows: rows.slice(1) };
 }
 
+// ---------- Master merge (multi-file wide join on key) ----------
+
+export type MasterMergeResult = {
+  master: SheetGrid;
+  missingPerFile: { fileName: string; keys: string[] }[];
+  summary: SheetGrid;
+  stats: Record<string, unknown>;
+};
+
+export function opMasterMerge(
+  grids: SheetGrid[],
+  fileNames: string[],
+  op: Extract<PlanOp, { op: "master_merge" }>,
+): MasterMergeResult {
+  if (grids.length === 0) throw new Error("No input grids");
+  const keyIdxs = grids.map((g) => findColumnIndex(g.headers, op.keyColumn));
+  keyIdxs.forEach((idx, i) => {
+    if (idx < 0 && op.joinType !== "append")
+      throw new Error(`Key column "${op.keyColumn}" not found in file "${fileNames[i]}"`);
+  });
+
+  const shortName = (n: string) => n.replace(/\.[^.]+$/, "").slice(0, 20);
+
+  if (op.joinType === "append") {
+    // Union of columns; stack all rows; add __Source column.
+    const headerSet: string[] = ["__Source"];
+    const seen = new Set<string>(["__source"]);
+    grids.forEach((g) =>
+      g.headers.forEach((h) => {
+        const k = h.trim().toLowerCase();
+        if (!seen.has(k) && h) {
+          seen.add(k);
+          headerSet.push(h);
+        }
+      }),
+    );
+    const rows: CellValue[][] = [];
+    grids.forEach((g, fi) => {
+      g.rows.forEach((r) => {
+        const out: CellValue[] = new Array(headerSet.length).fill(null);
+        out[0] = fileNames[fi];
+        g.headers.forEach((h, ci) => {
+          const targetIdx = headerSet.findIndex(
+            (x) => x.trim().toLowerCase() === h.trim().toLowerCase(),
+          );
+          if (targetIdx > 0) out[targetIdx] = r[ci];
+        });
+        rows.push(out);
+      });
+    });
+    const summary: SheetGrid = {
+      headers: ["Metric", "Value"],
+      rows: [
+        ["Join type", "append"],
+        ["Files", grids.length],
+        ["Total rows", rows.length],
+      ],
+    };
+    return {
+      master: { headers: headerSet, rows },
+      missingPerFile: [],
+      summary,
+      stats: { joinType: "append", files: grids.length, rows: rows.length },
+    };
+  }
+
+  // Build canonical headers: key first, then per-file columns (suffix on collision).
+  const headers: string[] = [op.keyColumn];
+  type Col = { fileIdx: number; sourceHeader: string };
+  const columnMeta: (Col | null)[] = [null];
+  const usedNames = new Set<string>([op.keyColumn.toLowerCase()]);
+
+  grids.forEach((g, fi) => {
+    g.headers.forEach((h, ci) => {
+      if (ci === keyIdxs[fi] || !h) return;
+      let name = h;
+      if (usedNames.has(name.toLowerCase())) name = `${h} (${shortName(fileNames[fi])})`;
+      let i = 2;
+      while (usedNames.has(name.toLowerCase())) name = `${h} (${shortName(fileNames[fi])} ${i++})`;
+      usedNames.add(name.toLowerCase());
+      headers.push(name);
+      columnMeta.push({ fileIdx: fi, sourceHeader: h });
+    });
+  });
+
+  const byKey = new Map<string, { row: CellValue[]; seenIn: Set<number>; dupCount: number }>();
+  const keyOrder: string[] = [];
+  const seenPerFile: Set<string>[] = grids.map(() => new Set());
+
+  grids.forEach((g, fi) => {
+    const kIdx = keyIdxs[fi];
+    g.rows.forEach((r) => {
+      const rawKey = r[kIdx];
+      if (rawKey == null || rawKey === "") return;
+      const key = String(rawKey).trim();
+      if (!key) return;
+      seenPerFile[fi].add(key);
+      let entry = byKey.get(key);
+      if (!entry) {
+        entry = { row: new Array(headers.length).fill(null), seenIn: new Set(), dupCount: 0 };
+        entry.row[0] = rawKey;
+        byKey.set(key, entry);
+        keyOrder.push(key);
+      }
+      if (entry.seenIn.has(fi)) entry.dupCount++;
+      entry.seenIn.add(fi);
+      // Fill this file's columns
+      for (let ti = 1; ti < headers.length; ti++) {
+        const cm = columnMeta[ti];
+        if (!cm || cm.fileIdx !== fi) continue;
+        const srcIdx = g.headers.indexOf(cm.sourceHeader);
+        if (srcIdx < 0) continue;
+        const newVal = r[srcIdx];
+        const cur = entry.row[ti];
+        if (cur == null || cur === "") {
+          entry.row[ti] = newVal;
+        } else if (op.dupeStrategy === "latest") {
+          entry.row[ti] = newVal;
+        } else if (op.dupeStrategy === "merge" && newVal != null && newVal !== "" && String(newVal) !== String(cur)) {
+          entry.row[ti] = `${String(cur)} | ${String(newVal)}`;
+        }
+        // "first" → keep cur
+      }
+    });
+  });
+
+  // Apply join filter
+  const kept = keyOrder.filter((k) => {
+    const e = byKey.get(k)!;
+    if (op.joinType === "inner") return e.seenIn.size === grids.length;
+    if (op.joinType === "left") return e.seenIn.has(0);
+    return true; // outer
+  });
+
+  const rows = kept.map((k) => byKey.get(k)!.row);
+
+  const missingPerFile = grids.map((_, fi) => {
+    const keys = kept.filter((k) => !byKey.get(k)!.seenIn.has(fi));
+    return { fileName: fileNames[fi], keys };
+  });
+
+  const totalDup = Array.from(byKey.values()).reduce((s, e) => s + e.dupCount, 0);
+
+  const summary: SheetGrid = {
+    headers: ["Metric", "Value"],
+    rows: [
+      ["Key column", op.keyColumn],
+      ["Join type", op.joinType],
+      ["Duplicate strategy", op.dupeStrategy],
+      ["Files merged", grids.length],
+      ["Unique keys", keyOrder.length],
+      ["Rows in master", rows.length],
+      ["Duplicate key values across files", totalDup],
+      ...missingPerFile.map((m) => [`Missing in ${m.fileName}`, m.keys.length] as CellValue[]),
+    ],
+  };
+
+  return {
+    master: { headers, rows },
+    missingPerFile,
+    summary,
+    stats: {
+      joinType: op.joinType,
+      dupeStrategy: op.dupeStrategy,
+      files: grids.length,
+      uniqueKeys: keyOrder.length,
+      rows: rows.length,
+      duplicates: totalDup,
+    },
+  };
+}
+
+// ---------- Bulk lookup ----------
+
+const KEYISH_HINTS = ["id", "reg", "roll", "email", "mail", "phone", "mobile", "name", "code", "number"];
+
+export type BulkLookupResult = {
+  results: SheetGrid;
+  notFound: SheetGrid;
+  stats: Record<string, unknown>;
+};
+
+export function opBulkLookup(
+  grid: SheetGrid,
+  op: Extract<PlanOp, { op: "bulk_lookup" }>,
+): BulkLookupResult {
+  const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
+  const candidateIdxs: number[] = [];
+  grid.headers.forEach((h, i) => {
+    const n = norm(h);
+    if (KEYISH_HINTS.some((hint) => n.includes(hint))) candidateIdxs.push(i);
+  });
+  if (candidateIdxs.length === 0) candidateIdxs.push(...grid.headers.map((_, i) => i));
+
+  const queries = op.queries.map((q) => q.trim()).filter(Boolean);
+  const resultsHeader = [...grid.headers, "Matched On", "Matched Query"];
+  const resultRows: CellValue[][] = [];
+  const notFound: string[] = [];
+  const seenRows = new Set<number>();
+
+  for (const q of queries) {
+    const nq = norm(q);
+    let matched = false;
+    for (let ri = 0; ri < grid.rows.length; ri++) {
+      const row = grid.rows[ri];
+      for (const ci of candidateIdxs) {
+        const cell = norm(row[ci]);
+        if (!cell) continue;
+        const isNameCol = /name/.test(norm(grid.headers[ci]));
+        const hit = isNameCol ? cell.includes(nq) : cell === nq;
+        if (hit) {
+          const rowKey = ri;
+          if (!seenRows.has(rowKey)) {
+            seenRows.add(rowKey);
+            resultRows.push([...row, grid.headers[ci], q]);
+          }
+          matched = true;
+          break;
+        }
+      }
+    }
+    if (!matched) notFound.push(q);
+  }
+
+  return {
+    results: { headers: resultsHeader, rows: resultRows },
+    notFound: { headers: ["Query"], rows: notFound.map((q) => [q]) },
+    stats: {
+      queries: queries.length,
+      matched: queries.length - notFound.length,
+      notFound: notFound.length,
+      rowsReturned: resultRows.length,
+    },
+  };
+}
+
+
+
 // Recalc formulas via HyperFormula. Preserves original formula strings when unsupported.
 export function recalcFormulas(wb: ExcelJS.Workbook): { recalculated: number; skipped: number } {
   const sheetsData: Record<string, (string | number | boolean | null)[][]> = {};

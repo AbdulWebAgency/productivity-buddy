@@ -85,14 +85,18 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Merge, dedupe, diff and clean up Excel workbooks with AI-assisted planning. Preserves formatting, formulas and structure.",
       },
-      { property: "og:title", content: "Ledgerly — Intelligent Excel automation" },
+      { property: "og:title", content: "Ledgerly — Intelligent Excel automation for teams" },
       {
         property: "og:description",
         content:
-          "Upload spreadsheets, describe what you need, and get a clean .xlsx back. Built for teachers, office staff and small teams.",
+          "Merge, dedupe, diff and clean up Excel workbooks with AI-assisted planning. Preserves formatting, formulas and structure.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
+      { name: "twitter:title", content: "Ledgerly — Intelligent Excel automation for teams" },
+      { name: "twitter:description", content: "Merge, dedupe, diff and clean up Excel workbooks with AI-assisted planning. Preserves formatting, formulas and structure." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c6e10b40-e137-4093-9aa4-8f3169bcedc1/id-preview-5581b974--d0189fca-ec83-44ce-b3a1-7cb420fc2c43.lovable.app-1784399480405.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c6e10b40-e137-4093-9aa4-8f3169bcedc1/id-preview-5581b974--d0189fca-ec83-44ce-b3a1-7cb420fc2c43.lovable.app-1784399480405.png" },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

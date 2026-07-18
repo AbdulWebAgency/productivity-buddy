@@ -476,6 +476,18 @@ function PlanCard({
                 <>Highlight {op.rule} values in <b>{op.column}</b></>
               )}
               {op.op === "recalc" && <>Recalculate formulas</>}
+              {op.op === "master_merge" && (
+                <>
+                  Create master sheet on <b>{op.keyColumn}</b> ({op.joinType} join, keep{" "}
+                  {op.dupeStrategy})
+                </>
+              )}
+              {op.op === "bulk_lookup" && (
+                <>
+                  Bulk lookup of <b>{op.queries.length}</b> value(s) in file #{op.fileIndex + 1}
+                </>
+              )}
+
             </li>
           ))}
         </ul>

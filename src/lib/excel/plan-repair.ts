@@ -103,6 +103,10 @@ function normalizeOp(raw: unknown, files: FileForAi[], repairs: string[]): Loose
   if (tag === "join" || tag === "combine") tag = "merge";
   if (tag === "highlight") tag = "highlight_column";
   if (tag === "recalculate") tag = "recalc";
+  if (tag === "master" || tag === "mastersheet" || tag === "master-sheet" || tag === "master sheet")
+    tag = "master_merge";
+  if (tag === "lookup" || tag === "bulk-lookup" || tag === "bulklookup") tag = "bulk_lookup";
+
   if (!KNOWN_OPS.has(tag)) {
     repairs.push(`Dropped unknown op "${String(o.op ?? o.type ?? "")}"`);
     return null;

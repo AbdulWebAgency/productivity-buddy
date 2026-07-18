@@ -552,6 +552,18 @@ export const runProposedPlan = createServerFn({ method: "POST" })
 
 function planLabel(plan: Plan): string {
   const kinds = plan.ops.map((o) => o.op);
+  if (kinds.includes("master_merge")) {
+    const mm = plan.ops.find((o) => o.op === "master_merge") as
+      | Extract<Plan["ops"][number], { op: "master_merge" }>
+      | undefined;
+    return mm ? `Master sheet (key: ${mm.keyColumn})` : "Master sheet";
+  }
+  if (kinds.includes("bulk_lookup")) {
+    const bl = plan.ops.find((o) => o.op === "bulk_lookup") as
+      | Extract<Plan["ops"][number], { op: "bulk_lookup" }>
+      | undefined;
+    return bl ? `Bulk lookup (${bl.queries.length} queries)` : "Bulk lookup";
+  }
   if (kinds.includes("merge")) return "Merge";
   if (kinds.includes("intersection")) return "Common rows";
   if (kinds.includes("diff")) return "Compare";
@@ -559,6 +571,7 @@ function planLabel(plan: Plan): string {
   if (kinds.includes("summary")) return "Summary";
   return kinds.join(" + ") || "Run";
 }
+
 
 export const getVersionDownloadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

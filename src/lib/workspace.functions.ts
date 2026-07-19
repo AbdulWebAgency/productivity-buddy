@@ -233,22 +233,51 @@ export const removeWorkspaceFile = createServerFn({ method: "POST" })
   });
 
 // ---------- Chat / planning ----------
+//
+// The conversation layer is LLM-first: the model behaves as a natural
+// coworker, sees the full workspace context (files + inspector + recent
+// history), and only hands off to the deterministic planner/engine when
+// it emits a validated plan directive. The deterministic planner is kept
+// as an offline fallback when the AI gateway is unavailable.
 
 type PlannerFile = { index: number; name: string; sheets: { name: string; headers: string[] }[] };
 
-async function loadFilesForPlanner(
+type FileForAiFull = PlannerFile & { inspector: unknown };
+
+async function loadFilesForAi(
   supabase: import("@supabase/supabase-js").SupabaseClient<import("@/integrations/supabase/types").Database>,
   workspaceId: string,
-): Promise<PlannerFile[]> {
+): Promise<FileForAiFull[]> {
   const { data: files } = await supabase
     .from("workspace_files")
-    .select("original_name,sheet_meta")
+    .select("original_name,sheet_meta,inspector")
     .eq("workspace_id", workspaceId)
     .order("created_at", { ascending: true });
   return (files ?? []).map((f, i) => {
     const meta = f.sheet_meta as { sheets?: { name: string; headers: string[] }[] } | null;
-    return { index: i, name: f.original_name, sheets: meta?.sheets ?? [] };
+    return {
+      index: i,
+      name: f.original_name,
+      sheets: meta?.sheets ?? [],
+      inspector: f.inspector,
+    };
   });
+}
+
+async function loadRecentHistory(
+  supabase: import("@supabase/supabase-js").SupabaseClient<import("@/integrations/supabase/types").Database>,
+  workspaceId: string,
+): Promise<{ role: "user" | "assistant"; content: string }[]> {
+  const { data } = await supabase
+    .from("workspace_messages")
+    .select("role,content,created_at")
+    .eq("workspace_id", workspaceId)
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const rows = (data ?? []).slice().reverse();
+  return rows
+    .filter((r) => r.role === "user" || r.role === "assistant")
+    .map((r) => ({ role: r.role as "user" | "assistant", content: r.content ?? "" }));
 }
 
 export const sendMessage = createServerFn({ method: "POST" })
@@ -265,7 +294,8 @@ export const sendMessage = createServerFn({ method: "POST" })
       .single();
     if (!ws || ws.user_id !== userId) throw new Error("Workspace not found");
 
-    // Store user message
+    // Persist the user message BEFORE calling the model so it appears in
+    // history and the assistant can reference it naturally.
     await supabase.from("workspace_messages").insert({
       workspace_id: data.workspaceId,
       user_id: userId,
@@ -273,9 +303,10 @@ export const sendMessage = createServerFn({ method: "POST" })
       content: data.text,
     });
 
-    const filesForAi = await loadFilesForPlanner(supabase, data.workspaceId);
+    const filesForAi = await loadFilesForAi(supabase, data.workspaceId);
     if (filesForAi.length === 0) {
-      const reply = "Please upload at least one spreadsheet first, then I can help.";
+      const reply =
+        "Go ahead and drop one or more spreadsheets on the left — as soon as they're up, I'll take a look and suggest what to do.";
       await supabase.from("workspace_messages").insert({
         workspace_id: data.workspaceId,
         user_id: userId,
@@ -285,80 +316,57 @@ export const sendMessage = createServerFn({ method: "POST" })
       return { kind: "text" as const, text: reply };
     }
 
-    // Look at the most recent assistant tool_data for pending unresolved
-    // intent (e.g. a prior clarification asking which column to use).
-    type PendingClarify = {
-      kind: "clarify";
-      pendingIntent?: string;
-      pendingSide?: "A" | "B" | "either";
-      candidates?: string[];
-    };
-    const { data: lastAssistant } = await supabase
-      .from("workspace_messages")
-      .select("tool_data,created_at")
-      .eq("workspace_id", data.workspaceId)
-      .eq("role", "assistant")
-      .order("created_at", { ascending: false })
-      .limit(1);
-    const pending: PendingClarify | null = (() => {
-      const td = lastAssistant?.[0]?.tool_data as { kind?: string } | null;
-      if (td && td.kind === "clarify") return td as PendingClarify;
-      return null;
-    })();
+    const apiKey = process.env.LOVABLE_API_KEY;
 
+    // ---- LLM-first path ---------------------------------------------------
+    if (apiKey) {
+      try {
+        const { runConversation } = await import("./workspace/ai-conversation.server");
+        const history = await loadRecentHistory(supabase, data.workspaceId);
+        const ctx = filesForAi.map((f) => ({
+          index: f.index,
+          name: f.name,
+          sheets: f.sheets,
+          inspector: (f.inspector as never) ?? null,
+        }));
+        const result = await runConversation(apiKey, ctx, history);
+        type Json = import("@/integrations/supabase/types").Json;
+
+        if (result.plan) {
+          await supabase.from("workspace_messages").insert({
+            workspace_id: data.workspaceId,
+            user_id: userId,
+            role: "assistant",
+            content: result.reply || "Here's what I'll do — hit **Run** when you're ready.",
+            tool_data: { kind: "plan", plan: result.plan } as unknown as Json,
+          });
+          return { kind: "plan" as const, plan: result.plan };
+        }
+
+        // Pure conversational reply.
+        await supabase.from("workspace_messages").insert({
+          workspace_id: data.workspaceId,
+          user_id: userId,
+          role: "assistant",
+          content: result.reply,
+        });
+        return { kind: "text" as const, text: result.reply };
+      } catch (err) {
+        console.error("LLM conversation failed, falling back to deterministic planner:", err);
+        // fall through to deterministic path below
+      }
+    }
+
+    // ---- Deterministic fallback (no API key or LLM error) -----------------
     const { tryDeterministicPlan } = await import("./excel/deterministic-plan");
-    const { classifyIntent, extractKeyOverride } = await import("./excel/intent");
+    const { extractKeyOverride } = await import("./excel/intent");
+    const preferredKey = extractKeyOverride(data.text);
+    const det = tryDeterministicPlan(data.text, filesForAi, { preferredKey });
+    type Json = import("@/integrations/supabase/types").Json;
 
-    const capabilities = () => {
-      const reply = [
-        "Here's what I can help with:",
-        "",
-        "• **Find common records** — students / rows present in both files",
-        "• **Find missing rows** — who's in one file but not the other (new joinees, dropouts)",
-        "• **Merge workbooks** on a shared key (Registration No, ID, Email, …)",
-        "• **Remove duplicates** by key or full-row match",
-        "• **Compare versions** — diff two files and list changes",
-        "• **Highlight** missing values, duplicates, or outliers",
-        "• **Generate summaries** with row counts and numeric stats",
-        "• **Clean up** blank rows and inconsistent formatting",
-        "• **Explain formulas** and suggest simpler alternatives",
-        "",
-        "Just describe what you want in plain English — I'll pick the right operation.",
-      ].join("\n");
-      return reply;
-    };
-
-    // Detect an explicit key override ("use ID NO instead", "match on Name").
-    const override = extractKeyOverride(data.text);
-
-    // If the previous turn asked for clarification and the current message is
-    // short, treat it as the user picking a key and resume the pending intent.
-    let preferredKey: string | null = override;
-    if (!preferredKey && pending) {
-      const short = data.text.trim().length <= 40 && !/[?.!]$/.test(data.text.trim());
-      const looksLikeColumn =
-        short && classifyIntent(data.text).intent === "unknown";
-      if (looksLikeColumn) preferredKey = data.text.trim();
-    }
-
-    const det = tryDeterministicPlan(data.text, filesForAi, {
-      resumeIntent: pending?.pendingIntent as
-        | "intersection"
-        | "difference"
-        | "merge"
-        | "master_merge"
-        | "bulk_lookup"
-        | "dedupe"
-        | "summary"
-        | "clean"
-        | undefined,
-
-      resumeSide: pending?.pendingSide,
-      preferredKey,
-    });
-
-    if (det?.kind === "capabilities") {
-      const reply = capabilities();
+    if (det?.kind === "capabilities" || !det) {
+      const reply =
+        "I can compare files, find missing or common records, merge on a shared key, build a master sheet, run bulk lookups, dedupe, summarize, and clean up blank rows. Tell me in your own words what you want.";
       await supabase.from("workspace_messages").insert({
         workspace_id: data.workspaceId,
         user_id: userId,
@@ -368,7 +376,7 @@ export const sendMessage = createServerFn({ method: "POST" })
       return { kind: "text" as const, text: reply };
     }
 
-    if (det?.kind === "plan") {
+    if (det.kind === "plan") {
       const plan: Plan = { ...det.plan, warnings: [...det.plan.warnings, ...det.notes] };
       const reply = `Here's what I'll do:\n\n${describePlan(plan)}\n\nReview and hit **Run** to apply it.`;
       await supabase.from("workspace_messages").insert({
@@ -376,67 +384,32 @@ export const sendMessage = createServerFn({ method: "POST" })
         user_id: userId,
         role: "assistant",
         content: reply,
-        tool_data: { kind: "plan", plan } as unknown as import("@/integrations/supabase/types").Json,
+        tool_data: { kind: "plan", plan } as unknown as Json,
       });
       return { kind: "plan" as const, plan };
     }
 
-    if (det?.kind === "needs_clarification") {
-      const reply = `${det.reason}${
-        det.candidateKeys.length ? ` Candidates I can see: ${det.candidateKeys.join(", ")}.` : ""
-      }`;
-      await supabase.from("workspace_messages").insert({
-        workspace_id: data.workspaceId,
-        user_id: userId,
-        role: "assistant",
-        content: reply,
-        tool_data: {
-          kind: "clarify",
-          candidates: det.candidateKeys,
-          sharedColumns: det.sharedColumns,
-          pendingIntent: det.pendingIntent,
-          pendingSide: det.pendingSide ?? null,
-        } as unknown as import("@/integrations/supabase/types").Json,
-      });
-      return { kind: "clarify" as const, candidates: det.candidateKeys };
-    }
-
-    // Fallback: conversational AI reply (no plan produced)
-    const apiKey = process.env.LOVABLE_API_KEY;
-    let reply =
-      "I'm not sure what to do yet. Try asking things like \"who is in both files\", \"which students are missing\", \"merge on Registration No\", or type **what can you do** to see everything I handle.";
-    if (apiKey) {
-      try {
-        const { createLovableAiGatewayProvider } = await import("./ai-gateway.server");
-        const { generateText } = await import("ai");
-        const gateway = createLovableAiGatewayProvider(apiKey);
-        const filesSummary = filesForAi
-          .map(
-            (f) =>
-              `- ${f.name}: sheets [${f.sheets
-                .map((s) => `${s.name}(${s.headers.slice(0, 8).join(",")})`)
-                .join("; ")}]`,
-          )
-          .join("\n");
-        const { text } = await generateText({
-          model: gateway("google/gemini-2.5-flash"),
-          system:
-            "You are Ledgerly, a friendly office-document AI coworker. Answer briefly (max 4 sentences). Only discuss the user's uploaded Excel files, columns, and possible operations (find common rows, find missing rows, merge, dedupe, summary, clean, explain formulas). If the user asks for an operation, suggest they phrase it clearly and mention the column to match on. Never invent data.",
-          prompt: `Uploaded files:\n${filesSummary}\n\nUser: ${data.text}`,
-        });
-        reply = text.trim() || reply;
-      } catch {
-        // keep default
-      }
-    }
+    // needs_clarification
+    const reply = `${det.reason}${
+      det.candidateKeys.length ? ` Candidates I can see: ${det.candidateKeys.join(", ")}.` : ""
+    }`;
     await supabase.from("workspace_messages").insert({
       workspace_id: data.workspaceId,
       user_id: userId,
       role: "assistant",
       content: reply,
+      tool_data: {
+        kind: "clarify",
+        candidates: det.candidateKeys,
+        sharedColumns: det.sharedColumns,
+        pendingIntent: det.pendingIntent,
+        pendingSide: det.pendingSide ?? null,
+      } as unknown as Json,
     });
-    return { kind: "text" as const, text: reply };
+    return { kind: "clarify" as const, candidates: det.candidateKeys };
   });
+
+
 
 function describePlan(plan: Plan): string {
   const lines: string[] = [];

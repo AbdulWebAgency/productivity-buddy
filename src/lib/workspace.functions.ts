@@ -520,12 +520,21 @@ export const runProposedPlan = createServerFn({ method: "POST" })
         .single();
       if (vErr) throw new Error(vErr.message);
 
-      const summary = summarizeRun(result.stats, result.warnings);
+      const fallbackSummary = summarizeRun(result.stats, result.warnings);
+      const { summarizeExecution } = await import("./workspace/ai-conversation.server");
+      const conversational = await summarizeExecution(
+        process.env.LOVABLE_API_KEY,
+        label,
+        result.stats,
+        result.warnings,
+        fallbackSummary,
+      );
       await supabase.from("workspace_messages").insert({
         workspace_id: data.workspaceId,
         user_id: userId,
         role: "assistant",
-        content: `Done — created version v${nextVersion} (**${label}**).\n\n${summary}`,
+        content: `${conversational}\n\n_Saved as **v${nextVersion} · ${label}** — download below._`,
+
         tool_data: {
           kind: "result",
           versionId: version.id,

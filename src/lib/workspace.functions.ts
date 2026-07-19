@@ -28,7 +28,8 @@ export const createWorkspace = createServerFn({ method: "POST" })
       user_id: userId,
       role: "assistant",
       content:
-        "Welcome. Upload one or more spreadsheets on the left, then tell me what you'd like to do — compare, merge, dedupe, summarize, or something else.",
+        "Hi — I'm Productivity Buddy. Drop one or more spreadsheets on the left and I'll take a look, then we can chat about what to do with them.",
+
     });
     return { id: row.id };
   });

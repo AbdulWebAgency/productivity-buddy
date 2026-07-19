@@ -182,8 +182,36 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
       .from("workspaces")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", data.workspaceId);
+
+    // Auto-greeting: after every upload batch, post a warm inspection summary
+    // so the assistant behaves like a coworker who actually looked at the files.
+    try {
+      const { data: allFiles } = await supabase
+        .from("workspace_files")
+        .select("original_name,sheet_meta,inspector")
+        .eq("workspace_id", data.workspaceId)
+        .order("created_at", { ascending: true });
+      const { buildInspectionGreeting } = await import("./workspace/ai-conversation.server");
+      const ctx = (allFiles ?? []).map((f, i) => ({
+        index: i,
+        name: f.original_name,
+        sheets:
+          (f.sheet_meta as { sheets?: { name: string; headers: string[] }[] } | null)?.sheets ?? [],
+        inspector: f.inspector as never,
+      }));
+      const greeting = buildInspectionGreeting(ctx);
+      await supabase.from("workspace_messages").insert({
+        workspace_id: data.workspaceId,
+        user_id: userId,
+        role: "assistant",
+        content: greeting,
+      });
+    } catch {
+      // Non-fatal: file registration succeeded.
+    }
     return { count: rows.length };
   });
+
 
 export const removeWorkspaceFile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

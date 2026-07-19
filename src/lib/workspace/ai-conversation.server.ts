@@ -1,0 +1,290 @@
+// Conversational AI layer for Productivity Buddy.
+// The deterministic planner and engine are unchanged — this file makes the
+// assistant feel like a natural coworker: it inspects files, greets the user,
+// carries context turn-to-turn, and decides when to hand off to the planner.
+
+import type { Plan } from "../excel/types";
+import { PlanSchema } from "../excel/types";
+import { repairAndParsePlan } from "../excel/plan-repair";
+
+type SheetMeta = { name: string; headers: string[] };
+type InspectorSheet = {
+  name: string;
+  rows: number;
+  columns: number;
+  headers: string[];
+  likelyKeys: string[];
+  blankRows: number;
+  formulaCells: number;
+  duplicateKeyValues: number;
+};
+type InspectorReport = { sheets: InspectorSheet[]; warnings: string[] } | null;
+
+export type WorkspaceFileCtx = {
+  index: number;
+  name: string;
+  sheets: SheetMeta[];
+  inspector: InspectorReport;
+};
+
+export type ChatTurn = { role: "user" | "assistant"; content: string };
+
+// ---------- Deterministic greeting after upload ----------
+
+function norm(s: string): string {
+  return s.trim().toLowerCase().replace(/[._\-]+/g, " ").replace(/\s+/g, " ");
+}
+
+function keysSharedAcross(files: WorkspaceFileCtx[]): string[] {
+  if (files.length === 0) return [];
+  const perFile = files.map((f) => {
+    const sheet = f.inspector?.sheets?.[0];
+    const headers = sheet?.headers ?? f.sheets[0]?.headers ?? [];
+    return new Set(headers.map(norm));
+  });
+  const [first, ...rest] = perFile;
+  if (!first) return [];
+  const displayFor = new Map<string, string>();
+  const s0 = files[0].inspector?.sheets?.[0]?.headers ?? files[0].sheets[0]?.headers ?? [];
+  s0.forEach((h) => displayFor.set(norm(h), h));
+  const shared: string[] = [];
+  for (const k of first) {
+    if (rest.every((s) => s.has(k))) shared.push(displayFor.get(k) ?? k);
+  }
+  return shared;
+}
+
+const KEY_HINTS = [
+  "registration", "reg no", "regno", "roll", "student id", "employee id",
+  "user id", "email", "phone", "mobile", "code", "id no", "id", "number",
+];
+
+function scoreKey(name: string): number {
+  const n = norm(name);
+  let s = 0;
+  for (const h of KEY_HINTS) if (n.includes(h)) s = Math.max(s, h.length);
+  return s;
+}
+
+export function pickBestSharedKey(files: WorkspaceFileCtx[]): string | null {
+  const shared = keysSharedAcross(files);
+  if (shared.length === 0) return null;
+  const sorted = [...shared].sort((a, b) => scoreKey(b) - scoreKey(a));
+  return sorted[0] ?? null;
+}
+
+export function buildInspectionGreeting(files: WorkspaceFileCtx[]): string {
+  if (files.length === 0) {
+    return "Upload one or more spreadsheets and I'll take a look right away.";
+  }
+  const lines: string[] = [
+    files.length === 1
+      ? "I've had a look at your file."
+      : `I've inspected your ${files.length} uploaded files.`,
+    "",
+  ];
+  for (const f of files) {
+    const sheet = f.inspector?.sheets?.[0];
+    const rows = sheet?.rows ?? 0;
+    const cols = sheet?.headers?.length ?? f.sheets[0]?.headers?.length ?? 0;
+    const suffix =
+      rows > 0
+        ? ` — ${rows.toLocaleString()} row${rows === 1 ? "" : "s"}, ${cols} column${cols === 1 ? "" : "s"}`
+        : cols > 0
+          ? ` — ${cols} column${cols === 1 ? "" : "s"}`
+          : "";
+    lines.push(`• **${f.name}**${suffix}`);
+  }
+  const shared = keysSharedAcross(files);
+  const best = pickBestSharedKey(files);
+  if (files.length >= 2 && best) {
+    lines.push("");
+    lines.push(
+      `All ${files.length} files share **${best}** — that looks like the strongest key to match on.`,
+    );
+    const others = shared.filter((s) => s !== best).slice(0, 3);
+    if (others.length) {
+      lines.push(
+        `Other common columns: ${others.map((o) => `_${o}_`).join(", ")}.`,
+      );
+    }
+  } else if (files.length >= 2 && shared.length === 0) {
+    lines.push("");
+    lines.push(
+      "The files don't share an obvious column name. Tell me which columns to match on and I'll handle the rest.",
+    );
+  }
+  // Warnings worth surfacing
+  const warns = files
+    .flatMap((f) => f.inspector?.warnings ?? [])
+    .slice(0, 3);
+  if (warns.length) {
+    lines.push("");
+    lines.push(`Heads up: ${warns.join("; ")}.`);
+  }
+  lines.push("");
+  lines.push("What would you like me to do?");
+  return lines.join("\n");
+}
+
+// ---------- LLM conversation ----------
+
+function fileCatalog(files: WorkspaceFileCtx[]): string {
+  return files
+    .map((f) => {
+      const insp = f.inspector?.sheets?.[0];
+      const rows = insp?.rows ?? 0;
+      const headers = (insp?.headers ?? f.sheets[0]?.headers ?? []).slice(0, 40);
+      const keys = insp?.likelyKeys?.slice(0, 3) ?? [];
+      const dupes = insp?.duplicateKeyValues ?? 0;
+      return [
+        `#${f.index} "${f.name}" — ${rows} rows`,
+        `  columns: ${headers.join(" | ")}`,
+        keys.length ? `  likely keys: ${keys.join(", ")}` : null,
+        dupes > 0 ? `  ⚠ ${dupes} duplicate values in ${keys[0] ?? "key"}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+}
+
+const SYSTEM_PROMPT = `You are Productivity Buddy, an intelligent AI coworker who helps people work with Excel workbooks. You are NOT a wizard or command parser — you talk like a warm, capable colleague who happens to have a powerful spreadsheet engine at your disposal.
+
+## How you behave
+- Speak naturally, in the first person. Keep replies short (2–5 sentences) unless the user asks for detail.
+- USE THE CONVERSATION HISTORY. If a previous turn established the task, the file, or the key column, don't re-ask.
+- Be proactive: recommend the best matching key when files clearly share one; explain trade-offs briefly ("Name has duplicates, Registration No is unique").
+- Never ask "which operation?" if the task is obvious from context. Never ask the same question twice.
+- Refer to files by their real names, not "file #1". You always know what "them", "these", "the two files" refer to based on the file catalog and history.
+- When the user just wants to chat, explain, or asks what you can do — reply conversationally without proposing a plan.
+
+## When to propose a plan
+Only when the user's intent is clear enough to execute. Confirm what you're about to do in one sentence, then attach a machine-readable plan block. The user will see a "Run" button.
+
+To propose a plan, END your reply with a fenced block using the language tag \`plan\`:
+
+\`\`\`plan
+{
+  "summary": "Short human summary",
+  "ops": [ { "op": "master_merge", "keyColumn": "Registration Number", "joinType": "outer", "dupeStrategy": "first" } ],
+  "warnings": []
+}
+\`\`\`
+
+Supported ops (use exact op names and casing):
+- { "op": "merge", "keyColumn": "...", "strategy": "union"|"intersection", "highlightUnmatched": true }
+- { "op": "master_merge", "keyColumn": "...", "joinType": "outer"|"inner"|"left"|"append", "dupeStrategy": "first"|"latest"|"merge" }
+- { "op": "intersection", "keyColumn": "...", "fileAIndex": 0, "fileBIndex": 1 }
+- { "op": "diff", "keyColumn": "...", "fileAIndex": 0, "fileBIndex": 1 }
+- { "op": "dedupe", "strategy": "key"|"full_row", "keyColumn": "..." }
+- { "op": "summary", "includeCharts": false }
+- { "op": "highlight_column", "column": "...", "rule": "missing"|"duplicate"|"outlier" }
+- { "op": "bulk_lookup", "fileIndex": 0, "queries": ["...", "..."] }
+- { "op": "recalc" }
+
+Rules:
+- Use column names EXACTLY as they appear in the file catalog.
+- Never invent columns. If the requested column doesn't exist in any file, ask which one to use.
+- One plan block per reply, at the very end. Nothing after the closing fence.
+- If a key is ambiguous (multiple equally-good columns), don't emit a plan — ask a single, specific question naming the candidates.
+- If the user is just chatting / asking a question / not requesting an action, don't emit a plan.`;
+
+export type ConversationResult = {
+  reply: string; // user-visible text (plan block stripped)
+  plan?: Plan; // present when the model proposed a valid plan
+  planRepairs?: string[];
+  planError?: string; // present when a plan block was found but couldn't be repaired
+};
+
+// Extract ```plan ... ``` block; return { visibleText, jsonRaw }.
+function extractPlanBlock(text: string): { visible: string; json: string | null } {
+  const re = /```plan\s*([\s\S]*?)```/i;
+  const m = text.match(re);
+  if (!m) return { visible: text.trim(), json: null };
+  const visible = (text.slice(0, m.index) + text.slice((m.index ?? 0) + m[0].length))
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return { visible, json: m[1].trim() };
+}
+
+export async function runConversation(
+  apiKey: string,
+  files: WorkspaceFileCtx[],
+  history: ChatTurn[],
+): Promise<ConversationResult> {
+  const { createLovableAiGatewayProvider } = await import("../ai-gateway.server");
+  const { generateText } = await import("ai");
+  const gateway = createLovableAiGatewayProvider(apiKey);
+
+  const catalog = fileCatalog(files);
+  const contextBlock = files.length
+    ? `## Uploaded files (authoritative)\n\n${catalog}`
+    : "## Uploaded files\n\n(none yet — the user hasn't uploaded any spreadsheets)";
+
+  // Cap history to keep prompt bounded.
+  const recent = history.slice(-16);
+  const chatMessages = recent.map((t) => ({ role: t.role, content: t.content }));
+
+  const { text } = await generateText({
+    model: gateway("google/gemini-2.5-flash"),
+    system: `${SYSTEM_PROMPT}\n\n${contextBlock}`,
+    messages: chatMessages,
+  });
+
+  const raw = (text ?? "").trim();
+  const { visible, json } = extractPlanBlock(raw);
+
+  if (!json) {
+    return { reply: visible || "Let me know what you'd like to do next." };
+  }
+
+  // Try strict parse first, then plan-repair as a fallback.
+  try {
+    const parsed = JSON.parse(json);
+    const result = PlanSchema.safeParse(parsed);
+    if (result.success) {
+      return { reply: visible, plan: result.data };
+    }
+  } catch {
+    // fall through to repair
+  }
+  try {
+    const { plan, repairs } = repairAndParsePlan(json, files);
+    return { reply: visible, plan, planRepairs: repairs };
+  } catch (e) {
+    return {
+      reply:
+        visible ||
+        "I had trouble putting together a valid plan for that. Could you rephrase or tell me which column to match on?",
+      planError: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
+// ---------- Post-run natural summary ----------
+
+export async function summarizeExecution(
+  apiKey: string | undefined,
+  label: string,
+  stats: Record<string, unknown>,
+  warnings: string[],
+  fallback: string,
+): Promise<string> {
+  if (!apiKey) return fallback;
+  try {
+    const { createLovableAiGatewayProvider } = await import("../ai-gateway.server");
+    const { generateText } = await import("ai");
+    const gateway = createLovableAiGatewayProvider(apiKey);
+    const { text } = await generateText({
+      model: gateway("google/gemini-2.5-flash"),
+      system:
+        "You are Productivity Buddy summarizing the outcome of an Excel operation to the user. Write 2–4 short lines. Warm, natural, first person. Mention concrete numbers from stats (matched, missing, duplicates, rows, files). Do NOT dump raw JSON. Do NOT mention 'the engine' or internal ops. End with a brief note that they can download the new version.",
+      prompt: `Operation: ${label}\n\nStats (JSON): ${JSON.stringify(stats).slice(0, 4000)}\n\nWarnings: ${warnings.slice(0, 5).join("; ") || "none"}`,
+    });
+    const t = text.trim();
+    return t || fallback;
+  } catch {
+    return fallback;
+  }
+}

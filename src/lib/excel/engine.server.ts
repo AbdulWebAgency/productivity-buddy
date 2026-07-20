@@ -249,6 +249,10 @@ export type DiffResult = {
     missingInA: number;
     missingInB: number;
     changed: number;
+    resolvedKeyA?: string;
+    resolvedKeyB?: string;
+    emptyKeysA?: number;
+    emptyKeysB?: number;
   };
 };
 
@@ -264,15 +268,33 @@ export function opDiff(
   if (kA < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesA}`);
   if (kB < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesB}`);
 
+  const resolvedA = a.headers[kA];
+  const resolvedB = b.headers[kB];
+
   const mapA = new Map<string, CellValue[]>();
+  let emptyKeysA = 0;
   for (const r of a.rows) {
     const k = String(r[kA] ?? "").trim();
-    if (k) mapA.set(k, r);
+    if (k) mapA.set(k.toLowerCase(), r);
+    else emptyKeysA++;
   }
   const mapB = new Map<string, CellValue[]>();
+  let emptyKeysB = 0;
   for (const r of b.rows) {
     const k = String(r[kB] ?? "").trim();
-    if (k) mapB.set(k, r);
+    if (k) mapB.set(k.toLowerCase(), r);
+    else emptyKeysB++;
+  }
+
+  if (mapA.size === 0) {
+    throw new Error(
+      `Column "${op.keyColumn}" resolved to "${resolvedA}" in ${namesA} but has no usable values. Pick a different key column.`,
+    );
+  }
+  if (mapB.size === 0) {
+    throw new Error(
+      `Column "${op.keyColumn}" resolved to "${resolvedB}" in ${namesB} but has no usable values. Pick a different key column.`,
+    );
   }
 
   const missingInA: CellValue[][] = [];
@@ -305,6 +327,10 @@ export function opDiff(
       missingInA: missingInA.length,
       missingInB: missingInB.length,
       changed: changed.length,
+      resolvedKeyA: resolvedA,
+      resolvedKeyB: resolvedB,
+      emptyKeysA,
+      emptyKeysB,
     },
   };
 }

@@ -801,15 +801,27 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
         const nameA = files[aIdx].name;
         const nameB = files[bIdx].name;
         const d = opDiff(a, b, op, nameA, nameB);
-        const sheetMissingA = `Missing in ${safeSheetName(nameA)}`;
-        const sheetMissingB = `Missing in ${safeSheetName(nameB)}`;
-        writeGridToSheet(outWb, sheetMissingA, d.missingInA);
-        writeGridToSheet(outWb, sheetMissingB, d.missingInB);
+        // "Only in X" is unambiguous: rows whose key appears in X but not the other file.
+        const sheetOnlyInB = `Only in ${safeSheetName(nameB)}`; // rows from B whose key isn't in A
+        const sheetOnlyInA = `Only in ${safeSheetName(nameA)}`; // rows from A whose key isn't in B
+        writeGridToSheet(outWb, sheetOnlyInB, d.missingInA);
+        writeGridToSheet(outWb, sheetOnlyInA, d.missingInB);
         if (d.changed.rows.length > 0) {
           writeGridToSheet(outWb, "Changed rows", d.changed);
           producedSheets++;
         }
         producedSheets += 2;
+        if (d.stats.missingInA === 0 && d.stats.missingInB === 0 && d.stats.changed === 0) {
+          warnings.push(
+            `${nameA} and ${nameB} have identical "${op.keyColumn}" values (${d.stats.comparedA} rows) — nothing missing on either side.`,
+          );
+        }
+        if (d.stats.emptyKeysA && d.stats.emptyKeysA > 0) {
+          warnings.push(`${nameA}: ${d.stats.emptyKeysA} rows had a blank "${op.keyColumn}" and were skipped.`);
+        }
+        if (d.stats.emptyKeysB && d.stats.emptyKeysB > 0) {
+          warnings.push(`${nameB}: ${d.stats.emptyKeysB} rows had a blank "${op.keyColumn}" and were skipped.`);
+        }
         opLogs.push({
           op: "diff",
           status: "ok",
@@ -818,7 +830,9 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
           fileA: nameA,
           fileB: nameB,
           ...d.stats,
-          sheets: [sheetMissingA, sheetMissingB, ...(d.changed.rows.length ? ["Changed rows"] : [])],
+          onlyInA: d.stats.missingInB,
+          onlyInB: d.stats.missingInA,
+          sheets: [sheetOnlyInB, sheetOnlyInA, ...(d.changed.rows.length ? ["Changed rows"] : [])],
         });
       } else if (op.op === "intersection") {
         const aIdx = op.fileAIndex;

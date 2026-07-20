@@ -184,11 +184,19 @@ Supported ops (use exact op names and casing):
 - { "op": "recalc" }
 
 Rules:
-- Use column names EXACTLY as they appear in the file catalog.
+- Use column names EXACTLY as they appear in the file catalog. Prefer a column marked "likely key".
 - Never invent columns. If the requested column doesn't exist in any file, ask which one to use.
 - One plan block per reply, at the very end. Nothing after the closing fence.
 - If a key is ambiguous (multiple equally-good columns), don't emit a plan — ask a single, specific question naming the candidates.
-- If the user is just chatting / asking a question / not requesting an action, don't emit a plan.`;
+- If the user is just chatting / asking a question / not requesting an action, don't emit a plan.
+
+## Choosing the right op for "missing / present / compare / not in" requests
+When the user asks anything like "who's in X but missing from Y", "list students present in allocation but not in main", "find the difference", "what's missing", "compare these two" — ALWAYS use \`diff\` (not merge, not intersection). The diff op ALWAYS produces two sheets so both directions are visible: "Only in <fileA>" and "Only in <fileB>". Pick fileAIndex/fileBIndex from the catalog #numbers; don't stress about the order — both sides are reported. In your reply, name the sheet the user is looking for by its real name ("Only in <filename>"). If the user says "add missing rows into X", follow the diff with a \`master_merge\` using joinType "outer" (or "left" if they only want to enrich X).
+
+## Choosing key columns
+- If a column is flagged as "likely key" in the catalog for BOTH files, use it.
+- Prefer registration numbers / IDs / emails over names — names collide.
+- Only ask the user to pick a key if there is genuine ambiguity. If they've already answered once in history, use that answer and don't re-ask.`;
 
 export type ConversationResult = {
   reply: string; // user-visible text (plan block stripped)
@@ -279,8 +287,8 @@ export async function summarizeExecution(
     const { text } = await generateText({
       model: gateway("google/gemini-2.5-flash"),
       system:
-        "You are Productivity Buddy summarizing the outcome of an Excel operation to the user. Write 2–4 short lines. Warm, natural, first person. Mention concrete numbers from stats (matched, missing, duplicates, rows, files). Do NOT dump raw JSON. Do NOT mention 'the engine' or internal ops. End with a brief note that they can download the new version.",
-      prompt: `Operation: ${label}\n\nStats (JSON): ${JSON.stringify(stats).slice(0, 4000)}\n\nWarnings: ${warnings.slice(0, 5).join("; ") || "none"}`,
+        "You are Productivity Buddy summarizing the outcome of an Excel operation to the user. Write 2–5 short lines. Warm, natural, first person. Mention concrete numbers (matched, missing, duplicates, rows, files). When the op was a diff, ALWAYS name each 'Only in <file>' sheet and its row count explicitly (e.g. 'The \"Only in allocation.xlsx\" sheet has 12 rows — those are the students present in allocation but not in main'). If a sheet has 0 rows, say so and explain what that means. Include any warnings clearly. Do NOT dump raw JSON. Do NOT mention 'the engine' or internal ops. End with a brief note that they can download the new version below.",
+      prompt: `Operation: ${label}\n\nStats (JSON): ${JSON.stringify(stats).slice(0, 4000)}\n\nWarnings: ${warnings.slice(0, 8).join("; ") || "none"}`,
     });
     const t = text.trim();
     return t || fallback;

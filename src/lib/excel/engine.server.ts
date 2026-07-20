@@ -349,13 +349,14 @@ export function opIntersection(
 
   const keysB = new Set<string>();
   for (const r of b.rows) {
-    const k = String(r[kB] ?? "").trim();
+    const k = String(r[kB] ?? "").trim().toLowerCase();
     if (k) keysB.add(k);
   }
   const rows: CellValue[][] = [];
   const emittedKeys = new Set<string>();
   for (const r of a.rows) {
-    const k = String(r[kA] ?? "").trim();
+    const kRaw = String(r[kA] ?? "").trim();
+    const k = kRaw.toLowerCase();
     if (k && keysB.has(k) && !emittedKeys.has(k)) {
       emittedKeys.add(k);
       rows.push(r);

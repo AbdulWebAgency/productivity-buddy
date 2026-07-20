@@ -46,6 +46,7 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
       lines.push(
         `• Compared **${op.fileA}** vs **${op.fileB}** on "${op.keyColumn}" — **${onlyInA}** only in ${op.fileA}, **${onlyInB}** only in ${op.fileB}, ${op.changed ?? 0} changed. See sheets "Only in ${op.fileA}" and "Only in ${op.fileB}".`,
       );
+    } else if (op.op === "intersection") {
       lines.push(`• Found ${op.common ?? 0} rows present in both files (matched on "${op.keyColumn}").`);
     } else if (op.op === "summary") {
       lines.push(`• Generated a summary sheet.`);

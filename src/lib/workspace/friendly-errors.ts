@@ -41,7 +41,11 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
     } else if (op.op === "dedupe") {
       lines.push(`• Removed ${op.duplicatesRemoved ?? 0} duplicate rows (${op.rowsOut ?? 0} kept).`);
     } else if (op.op === "diff") {
-      lines.push(`• Compared files on "${op.keyColumn}" — ${op.missingInA ?? 0} missing in A, ${op.missingInB ?? 0} missing in B, ${op.changed ?? 0} changed.`);
+      const onlyInA = op.onlyInA ?? op.missingInB ?? 0;
+      const onlyInB = op.onlyInB ?? op.missingInA ?? 0;
+      lines.push(
+        `• Compared **${op.fileA}** vs **${op.fileB}** on "${op.keyColumn}" — **${onlyInA}** only in ${op.fileA}, **${onlyInB}** only in ${op.fileB}, ${op.changed ?? 0} changed. See sheets "Only in ${op.fileA}" and "Only in ${op.fileB}".`,
+      );
     } else if (op.op === "intersection") {
       lines.push(`• Found ${op.common ?? 0} rows present in both files (matched on "${op.keyColumn}").`);
     } else if (op.op === "summary") {

@@ -249,6 +249,10 @@ export type DiffResult = {
     missingInA: number;
     missingInB: number;
     changed: number;
+    resolvedKeyA?: string;
+    resolvedKeyB?: string;
+    emptyKeysA?: number;
+    emptyKeysB?: number;
   };
 };
 
@@ -264,15 +268,33 @@ export function opDiff(
   if (kA < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesA}`);
   if (kB < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesB}`);
 
+  const resolvedA = a.headers[kA];
+  const resolvedB = b.headers[kB];
+
   const mapA = new Map<string, CellValue[]>();
+  let emptyKeysA = 0;
   for (const r of a.rows) {
     const k = String(r[kA] ?? "").trim();
-    if (k) mapA.set(k, r);
+    if (k) mapA.set(k.toLowerCase(), r);
+    else emptyKeysA++;
   }
   const mapB = new Map<string, CellValue[]>();
+  let emptyKeysB = 0;
   for (const r of b.rows) {
     const k = String(r[kB] ?? "").trim();
-    if (k) mapB.set(k, r);
+    if (k) mapB.set(k.toLowerCase(), r);
+    else emptyKeysB++;
+  }
+
+  if (mapA.size === 0) {
+    throw new Error(
+      `Column "${op.keyColumn}" resolved to "${resolvedA}" in ${namesA} but has no usable values. Pick a different key column.`,
+    );
+  }
+  if (mapB.size === 0) {
+    throw new Error(
+      `Column "${op.keyColumn}" resolved to "${resolvedB}" in ${namesB} but has no usable values. Pick a different key column.`,
+    );
   }
 
   const missingInA: CellValue[][] = [];
@@ -305,6 +327,10 @@ export function opDiff(
       missingInA: missingInA.length,
       missingInB: missingInB.length,
       changed: changed.length,
+      resolvedKeyA: resolvedA,
+      resolvedKeyB: resolvedB,
+      emptyKeysA,
+      emptyKeysB,
     },
   };
 }
@@ -323,13 +349,14 @@ export function opIntersection(
 
   const keysB = new Set<string>();
   for (const r of b.rows) {
-    const k = String(r[kB] ?? "").trim();
+    const k = String(r[kB] ?? "").trim().toLowerCase();
     if (k) keysB.add(k);
   }
   const rows: CellValue[][] = [];
   const emittedKeys = new Set<string>();
   for (const r of a.rows) {
-    const k = String(r[kA] ?? "").trim();
+    const kRaw = String(r[kA] ?? "").trim();
+    const k = kRaw.toLowerCase();
     if (k && keysB.has(k) && !emittedKeys.has(k)) {
       emittedKeys.add(k);
       rows.push(r);
@@ -775,15 +802,27 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
         const nameA = files[aIdx].name;
         const nameB = files[bIdx].name;
         const d = opDiff(a, b, op, nameA, nameB);
-        const sheetMissingA = `Missing in ${safeSheetName(nameA)}`;
-        const sheetMissingB = `Missing in ${safeSheetName(nameB)}`;
-        writeGridToSheet(outWb, sheetMissingA, d.missingInA);
-        writeGridToSheet(outWb, sheetMissingB, d.missingInB);
+        // "Only in X" is unambiguous: rows whose key appears in X but not the other file.
+        const sheetOnlyInB = `Only in ${safeSheetName(nameB)}`; // rows from B whose key isn't in A
+        const sheetOnlyInA = `Only in ${safeSheetName(nameA)}`; // rows from A whose key isn't in B
+        writeGridToSheet(outWb, sheetOnlyInB, d.missingInA);
+        writeGridToSheet(outWb, sheetOnlyInA, d.missingInB);
         if (d.changed.rows.length > 0) {
           writeGridToSheet(outWb, "Changed rows", d.changed);
           producedSheets++;
         }
         producedSheets += 2;
+        if (d.stats.missingInA === 0 && d.stats.missingInB === 0 && d.stats.changed === 0) {
+          warnings.push(
+            `${nameA} and ${nameB} have identical "${op.keyColumn}" values (${d.stats.comparedA} rows) — nothing missing on either side.`,
+          );
+        }
+        if (d.stats.emptyKeysA && d.stats.emptyKeysA > 0) {
+          warnings.push(`${nameA}: ${d.stats.emptyKeysA} rows had a blank "${op.keyColumn}" and were skipped.`);
+        }
+        if (d.stats.emptyKeysB && d.stats.emptyKeysB > 0) {
+          warnings.push(`${nameB}: ${d.stats.emptyKeysB} rows had a blank "${op.keyColumn}" and were skipped.`);
+        }
         opLogs.push({
           op: "diff",
           status: "ok",
@@ -792,7 +831,9 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
           fileA: nameA,
           fileB: nameB,
           ...d.stats,
-          sheets: [sheetMissingA, sheetMissingB, ...(d.changed.rows.length ? ["Changed rows"] : [])],
+          onlyInA: d.stats.missingInB,
+          onlyInB: d.stats.missingInA,
+          sheets: [sheetOnlyInB, sheetOnlyInA, ...(d.changed.rows.length ? ["Changed rows"] : [])],
         });
       } else if (op.op === "intersection") {
         const aIdx = op.fileAIndex;

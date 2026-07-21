@@ -807,15 +807,20 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
         // "Only in X" is unambiguous: rows whose key appears in X but not the other file.
         const sheetOnlyInB = `Only in ${safeSheetName(nameB)}`; // rows from B whose key isn't in A
         const sheetOnlyInA = `Only in ${safeSheetName(nameA)}`; // rows from A whose key isn't in B
-        writeGridToSheet(outWb, sheetOnlyInB, d.missingInA);
-        writeGridToSheet(outWb, sheetOnlyInA, d.missingInB);
+        if (d.missingInA.rows.length > 0) {
+          writeGridToSheet(outWb, sheetOnlyInB, d.missingInA);
+          producedSheets++;
+        }
+
+        if (d.missingInB.rows.length > 0) {
+          writeGridToSheet(outWb, sheetOnlyInA, d.missingInB);
+          producedSheets++;
+        }
 
         if (d.changed.rows.length > 0) {
           writeGridToSheet(outWb, "Changed rows", d.changed);
           producedSheets++;
         }
-
-        producedSheets += 2;
         if (d.stats.missingInA === 0 && d.stats.missingInB === 0 && d.stats.changed === 0) {
           warnings.push(
             `${nameA} and ${nameB} have identical "${op.keyColumn}" values (${d.stats.comparedA} rows) — nothing missing on either side.`,

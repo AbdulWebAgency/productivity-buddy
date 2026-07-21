@@ -304,8 +304,21 @@ export function opDiff(
     if (!mapA.has(key)) missingInA.push(rowB);
     else {
       const rowA = mapA.get(key)!;
-      if (JSON.stringify(rowA) !== JSON.stringify(rowB)) {
-        changed.push([key, JSON.stringify(rowA), JSON.stringify(rowB)]);
+      const changedColumns: string[] = [];
+
+      for (let i = 0; i < a.headers.length; i++) {
+        if (i === kA) continue;
+
+        const valueA = String(rowA[i] ?? "").trim();
+        const valueB = String(rowB[i] ?? "").trim();
+
+        if (valueA !== valueB) {
+          changedColumns.push(a.headers[i]);
+        }
+      }
+
+      if (changedColumns.length > 0) {
+        changed.push([key, changedColumns.join(", ")]);
       }
     }
   }
@@ -317,7 +330,7 @@ export function opDiff(
     missingInA: { headers: b.headers, rows: missingInA },
     missingInB: { headers: a.headers, rows: missingInB },
     changed: {
-      headers: [op.keyColumn, `Values in ${namesA}`, `Values in ${namesB}`],
+      headers: [op.keyColumn, "Changed Columns"],
       rows: changed,
     },
     stats: {

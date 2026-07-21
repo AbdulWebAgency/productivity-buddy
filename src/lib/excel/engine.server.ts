@@ -90,7 +90,12 @@ const HEADER_STYLE = {
 };
 
 function findColumnIndex(headers: string[], name: string): number {
-  const norm = (s: string) => s.trim().toLowerCase().replace(/[_\-]+/g, " ").replace(/\s+/g, " ");
+  const norm = (s: string) =>
+    s
+      .trim()
+      .toLowerCase()
+      .replace(/[_\-]+/g, " ")
+      .replace(/\s+/g, " ");
   const target = norm(name);
   // 1. exact normalized match
   let idx = headers.findIndex((h) => norm(h) === target);
@@ -189,10 +194,7 @@ export function opMerge(
   });
 
   const allKeys = Array.from(byKey.keys());
-  const filtered =
-    op.strategy === "intersection"
-      ? allKeys.filter((k) => seenPerFile.every((s) => s.has(k)))
-      : allKeys;
+  const filtered = op.strategy === "intersection" ? allKeys.filter((k) => seenPerFile.every((s) => s.has(k))) : allKeys;
 
   const rows: CellValue[][] = [];
   const unmatched = new Set<number>();
@@ -216,10 +218,7 @@ export function opMerge(
   };
 }
 
-export function opDedupe(
-  grid: SheetGrid,
-  op: Extract<PlanOp, { op: "dedupe" }>,
-): { grid: SheetGrid; removed: number } {
+export function opDedupe(grid: SheetGrid, op: Extract<PlanOp, { op: "dedupe" }>): { grid: SheetGrid; removed: number } {
   const seen = new Set<string>();
   const kept: CellValue[][] = [];
   let removed = 0;
@@ -349,7 +348,9 @@ export function opIntersection(
 
   const keysB = new Set<string>();
   for (const r of b.rows) {
-    const k = String(r[kB] ?? "").trim().toLowerCase();
+    const k = String(r[kB] ?? "")
+      .trim()
+      .toLowerCase();
     if (k) keysB.add(k);
   }
   const rows: CellValue[][] = [];
@@ -434,9 +435,7 @@ export function opMasterMerge(
         const out: CellValue[] = new Array(headerSet.length).fill(null);
         out[0] = fileNames[fi];
         g.headers.forEach((h, ci) => {
-          const targetIdx = headerSet.findIndex(
-            (x) => x.trim().toLowerCase() === h.trim().toLowerCase(),
-          );
+          const targetIdx = headerSet.findIndex((x) => x.trim().toLowerCase() === h.trim().toLowerCase());
           if (targetIdx > 0) out[targetIdx] = r[ci];
         });
         rows.push(out);
@@ -574,11 +573,11 @@ export type BulkLookupResult = {
   stats: Record<string, unknown>;
 };
 
-export function opBulkLookup(
-  grid: SheetGrid,
-  op: Extract<PlanOp, { op: "bulk_lookup" }>,
-): BulkLookupResult {
-  const norm = (s: unknown) => String(s ?? "").trim().toLowerCase();
+export function opBulkLookup(grid: SheetGrid, op: Extract<PlanOp, { op: "bulk_lookup" }>): BulkLookupResult {
+  const norm = (s: unknown) =>
+    String(s ?? "")
+      .trim()
+      .toLowerCase();
   const candidateIdxs: number[] = [];
   grid.headers.forEach((h, i) => {
     const n = norm(h);
@@ -628,8 +627,6 @@ export function opBulkLookup(
   };
 }
 
-
-
 // Recalc formulas via HyperFormula. Preserves original formula strings when unsupported.
 export function recalcFormulas(wb: ExcelJS.Workbook): { recalculated: number; skipped: number } {
   const sheetsData: Record<string, (string | number | boolean | null)[][]> = {};
@@ -667,7 +664,10 @@ export function recalcFormulas(wb: ExcelJS.Workbook): { recalculated: number; sk
             try {
               const result = hf.getCellValue({ sheet: sheetId, row: r - 1, col: c - 1 });
               if (result != null && typeof result !== "object") {
-                cell.value = { formula: (v as ExcelJS.CellFormulaValue).formula, result: result as ExcelJS.CellFormulaValue["result"] } as ExcelJS.CellFormulaValue;
+                cell.value = {
+                  formula: (v as ExcelJS.CellFormulaValue).formula,
+                  result: result as ExcelJS.CellFormulaValue["result"],
+                } as ExcelJS.CellFormulaValue;
                 recalculated++;
               } else {
                 skipped++;
@@ -735,9 +735,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
   const grids = workbooks.map((wb) => sheetToGrid(wb.worksheets[0]));
 
   // Determine output strategy.
-  const hasMutating = plan.ops.some(
-    (o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column",
-  );
+  const hasMutating = plan.ops.some((o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column");
   // Merge/dedupe/highlight can preserve first-workbook styling by mutating a
   // copy of the first workbook. Diff/summary produce brand-new deliverables.
   const outWb = hasMutating ? workbooks[0] : new ExcelJS.Workbook();
@@ -761,7 +759,11 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
           opLogs.push({ op: "merge", status: "skipped", reason: "needs ≥2 files" });
           continue;
         }
-        const merged = opMerge(grids, files.map((f) => f.name), op);
+        const merged = opMerge(
+          grids,
+          files.map((f) => f.name),
+          op,
+        );
         currentGrid = { headers: merged.headers, rows: merged.rows };
         unmatched = merged.unmatchedRowSet;
         opLogs.push({
@@ -807,10 +809,12 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
         const sheetOnlyInA = `Only in ${safeSheetName(nameA)}`; // rows from A whose key isn't in B
         writeGridToSheet(outWb, sheetOnlyInB, d.missingInA);
         writeGridToSheet(outWb, sheetOnlyInA, d.missingInB);
+
         if (d.changed.rows.length > 0) {
           writeGridToSheet(outWb, "Changed rows", d.changed);
           producedSheets++;
         }
+
         producedSheets += 2;
         if (d.stats.missingInA === 0 && d.stats.missingInB === 0 && d.stats.changed === 0) {
           warnings.push(
@@ -927,7 +931,11 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
           opLogs.push({ op: "master_merge", status: "skipped", reason: "needs ≥2 files" });
           continue;
         }
-        const m = opMasterMerge(grids, files.map((f) => f.name), op);
+        const m = opMasterMerge(
+          grids,
+          files.map((f) => f.name),
+          op,
+        );
         writeGridToSheet(outWb, "Master", m.master);
         producedSheets++;
         writeGridToSheet(outWb, "Merge Summary", m.summary);
@@ -992,10 +1000,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
     // exporting the original file.
     writeGridToSheet(outWb, "No output", {
       headers: ["Notice"],
-      rows: [
-        ["No operation produced output. See warnings for details."],
-        ...warnings.map((w) => [w] as CellValue[]),
-      ],
+      rows: [["No operation produced output. See warnings for details."], ...warnings.map((w) => [w] as CellValue[])],
     });
     warnings.push("No operation produced output.");
   }
@@ -1014,5 +1019,8 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
 
 function safeSheetName(name: string): string {
   // Excel sheet names: max 31 chars, no : \ / ? * [ ]
-  return name.replace(/\.[^.]+$/, "").replace(/[\\/:?*[\]]/g, " ").slice(0, 25);
+  return name
+    .replace(/\.[^.]+$/, "")
+    .replace(/[\\/:?*[\]]/g, " ")
+    .slice(0, 25);
 }

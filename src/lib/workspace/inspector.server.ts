@@ -1,5 +1,6 @@
 // Server-only Excel inspector: analyze a workbook beyond sheet meta.
 import type ExcelJS from "exceljs";
+import { detectHeaderRow } from "@/lib/excel/header-detection";
 
 export type InspectorReport = {
   sheets: {
@@ -16,12 +17,29 @@ export type InspectorReport = {
 };
 
 const KEY_HINTS = [
-  "registration", "reg no", "regno", "roll", "student id", "employee id",
-  "user id", "email", "phone", "mobile", "code", "id", "number", "sl no", "serial",
+  "registration",
+  "reg no",
+  "regno",
+  "roll",
+  "student id",
+  "employee id",
+  "user id",
+  "email",
+  "phone",
+  "mobile",
+  "code",
+  "id",
+  "number",
+  "sl no",
+  "serial",
 ];
 
 function norm(s: string): string {
-  return s.trim().toLowerCase().replace(/[._\-]+/g, " ").replace(/\s+/g, " ");
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[._\-]+/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function scoreHeader(h: string): number {
@@ -35,7 +53,8 @@ export function inspectWorkbook(wb: ExcelJS.Workbook): InspectorReport {
   const warnings: string[] = [];
   const sheets = wb.worksheets.map((ws) => {
     const headers: string[] = [];
-    const first = ws.getRow(1);
+    const headerRow = detectHeaderRow(ws);
+    const first = ws.getRow(headerRow);
     for (let c = 1; c <= ws.columnCount; c++) {
       headers.push(String(first.getCell(c).value ?? "").trim());
     }
@@ -43,7 +62,7 @@ export function inspectWorkbook(wb: ExcelJS.Workbook): InspectorReport {
     let formulaCells = 0;
     // Collect column values for uniqueness scoring
     const perColValues: Map<number, string[]> = new Map();
-    for (let r = 2; r <= ws.rowCount; r++) {
+    for (let r = headerRow + 1; r <= ws.rowCount; r++) {
       const row = ws.getRow(r);
       let any = false;
       for (let c = 1; c <= headers.length; c++) {
@@ -87,7 +106,7 @@ export function inspectWorkbook(wb: ExcelJS.Workbook): InspectorReport {
 
     return {
       name: ws.name,
-      rows: Math.max(0, ws.rowCount - 1),
+      rows: Math.max(0, ws.rowCount - headerRow),
       columns: headers.filter(Boolean).length,
       headers: headers.filter(Boolean),
       blankRows,

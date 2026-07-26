@@ -6,35 +6,7 @@
 
 import type { Plan, PlanOp } from "./types";
 import { classifyIntent, type Intent } from "./intent";
-
-export type FileForAi = {
-  index: number;
-  name: string;
-  sheets: { name: string; headers: string[] }[];
-};
-
-const KEY_HINTS = [
-  "registration",
-  "reg no",
-  "regno",
-  "roll",
-  "student id",
-  "employee id",
-  "user id",
-  "email",
-  "phone",
-  "mobile",
-  "code",
-  "id no",
-  "id",
-  "number",
-  "sl no",
-  "serial",
-];
-
-function norm(s: string): string {
-  return s.trim().toLowerCase().replace(/[._\-]+/g, " ").replace(/\s+/g, " ");
-}
+import { normalizeHeader as norm, scoreKey } from "./engine/shared/headers";
 
 function fileHeaders(f: FileForAi): string[] {
   return f.sheets[0]?.headers ?? [];

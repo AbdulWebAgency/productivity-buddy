@@ -481,6 +481,11 @@ function PlanCard({ plan, onRun, running }: { plan: Plan; onRun: () => void; run
             </li>
           ))}
         </ul>
+        {plan.projection?.columns && plan.projection.columns.length > 0 && (
+          <div className="text-xs text-muted-foreground">
+            Columns: <span className="font-medium text-foreground">{plan.projection.columns.join(", ")}</span>
+          </div>
+        )}
         {plan.warnings.length > 0 && (
           <div className="text-xs text-muted-foreground">Notes: {plan.warnings.join("; ")}</div>
         )}

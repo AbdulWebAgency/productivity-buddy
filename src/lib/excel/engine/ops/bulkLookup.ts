@@ -1,7 +1,7 @@
 import type { PlanOp } from "../../types";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { writeGridToSheet } from "../shared/workbook";
-import { registerOp } from "../registry";
+import { registerOp, applyProjection } from "../registry";
 
 const KEYISH_HINTS = ["id", "reg", "roll", "email", "mail", "phone", "mobile", "name", "code", "number"];
 
@@ -72,7 +72,11 @@ registerOp<Extract<PlanOp, { op: "bulk_lookup" }>>("bulk_lookup", (op, ctx) => {
     return;
   }
   const r = opBulkLookup(targetGrid, op);
-  writeGridToSheet(ctx.outWb, "Results", r.results);
+  const projectedResults = applyProjection(ctx, "Results", r.results, {
+    alwaysKeep: ["Matched On", "Matched Query"],
+  });
+  writeGridToSheet(ctx.outWb, "Results", projectedResults);
+  // "Not Found" is a diagnostic query list — skip projection.
   writeGridToSheet(ctx.outWb, "Not Found", r.notFound);
   ctx.state.producedSheets += 2;
   ctx.opLogs.push({

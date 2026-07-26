@@ -6,7 +6,7 @@
 
 import type { Plan, PlanOp } from "./types";
 import { classifyIntent, type Intent } from "./intent";
-import { normalizeHeader as norm, scoreKey } from "./engine/shared/headers";
+import { normalizeHeader as norm, scoreKey, resolveColumn } from "./engine/shared/headers";
 
 export type FileForAi = {
   index: number;
@@ -16,6 +16,67 @@ export type FileForAi = {
 
 function fileHeaders(f: FileForAi): string[] {
   return f.sheets[0]?.headers ?? [];
+}
+
+// Extract "give me only Name, Reg No and Email"-style column requests.
+// Returns undefined when no candidate resolves against the union of file
+// headers — projection is best-effort and never blocks a plan.
+function extractProjection(
+  text: string,
+  files: FileForAi[],
+): { columns: string[] } | undefined {
+  const patterns: RegExp[] = [
+    /(?:give me|show(?:ing)?|return|include|with (?:the )?columns?|only (?:the )?columns?|only|just)\s+(?:the\s+)?(?:columns?\s+)?([^.\n?!]+)/i,
+    /\bcolumns?\s*[:=]\s*([^.\n?!]+)/i,
+  ];
+  let candidates: string[] = [];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    const raw = m[1]
+      .replace(/\band\b/gi, ",")
+      .split(/[,;]/)
+      .map((s) => s.trim().replace(/^["'`]|["'`]$/g, ""))
+      .filter(Boolean);
+    if (raw.length > 0) {
+      candidates = raw;
+      break;
+    }
+  }
+  if (candidates.length === 0) return undefined;
+
+  const stop = new Set([
+    "the",
+    "a",
+    "an",
+    "please",
+    "thanks",
+    "rows",
+    "row",
+    "all",
+    "everything",
+    "data",
+    "records",
+    "students",
+    "entries",
+    "results",
+    "them",
+    "these",
+    "those",
+  ]);
+  const cleaned = candidates.filter(
+    (c) => c.length >= 2 && c.length <= 60 && !stop.has(c.toLowerCase()),
+  );
+  if (cleaned.length === 0) return undefined;
+
+  // Union of all file headers — projection is engine-agnostic, so any file
+  // with a matching column is enough to accept the candidate.
+  const unionHeaders = Array.from(
+    new Set(files.flatMap((f) => fileHeaders(f))),
+  );
+  const anyResolves = cleaned.some((name) => resolveColumn(unionHeaders, name) >= 0);
+  if (!anyResolves) return undefined;
+  return { columns: cleaned };
 }
 
 function commonColumns(files: FileForAi[]): { display: string; perFile: string[] }[] {
@@ -123,6 +184,9 @@ export function tryDeterministicPlan(
     return { key: null, tied: picked.tiedCandidates.length ? picked.tiedCandidates : sharedNames };
   };
 
+  const projection = extractProjection(trimmed, files);
+  const withProjection = <T extends object>(p: T): T => (projection ? { ...p, projection } : p);
+
   if (effectiveIntent === "intersection") {
     if (files.length < 2) return null;
     const { key, tied } = buildKeyOp();
@@ -141,12 +205,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "intersection",
-      plan: {
+      plan: withProjection({
         summary: `Rows present in both "${files[0].name}" and "${files[1].name}", matched on "${key}".`,
         ops,
         columnMappings: [],
         warnings: [],
-      },
+      }),
       notes: [`Deterministic intersection on "${key}".`],
     };
   }
@@ -168,12 +232,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "difference",
-      plan: {
+      plan: withProjection({
         summary: `Difference between "${files[0].name}" and "${files[1].name}" on "${key}".`,
         ops,
         columnMappings: [],
         warnings: side ? [`Requested side: only in file ${side}.`] : [],
-      },
+      }),
       notes: [`Deterministic difference on "${key}".`],
     };
   }
@@ -196,12 +260,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "merge",
-      plan: {
+      plan: withProjection({
         summary: `Merge all files on "${key}".`,
         ops,
         columnMappings: [],
         warnings: [],
-      },
+      }),
       notes: [`Deterministic merge on "${key}".`],
     };
   }
@@ -242,12 +306,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "master_merge",
-      plan: {
+      plan: withProjection({
         summary: `Create master sheet across ${files.length} files on "${key}" (${jt}, keep ${ds}).`,
         ops: [{ op: "master_merge", keyColumn: key, joinType: jt, dupeStrategy: ds }],
         columnMappings: [],
         warnings: [],
-      },
+      }),
       notes: [`Master merge on "${key}" (${jt}).`],
     };
   }
@@ -290,12 +354,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "bulk_lookup",
-      plan: {
+      plan: withProjection({
         summary: `Bulk lookup of ${queries.length} value(s) in "${files[fileIndex]?.name ?? "file"}".`,
         ops: [{ op: "bulk_lookup", fileIndex, queries }],
         columnMappings: [],
         warnings: [],
-      },
+      }),
       notes: [`Bulk lookup (${queries.length} queries).`],
     };
   }
@@ -309,12 +373,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "dedupe",
-      plan: {
+      plan: withProjection({
         summary: key ? `Remove duplicates using "${key}".` : "Remove full-row duplicates.",
         ops,
         columnMappings: [],
         warnings: [],
-      },
+      }),
       notes: ["Deterministic dedupe."],
     };
   }
@@ -323,12 +387,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "summary",
-      plan: {
+      plan: withProjection({
         summary: "Add a summary sheet with row counts and numeric column stats.",
         ops: [{ op: "summary", includeCharts: false }],
         columnMappings: [],
         warnings: [],
-      },
+      }),
       notes: ["Deterministic summary."],
     };
   }
@@ -337,12 +401,12 @@ export function tryDeterministicPlan(
     return {
       kind: "plan",
       intent: "clean",
-      plan: {
+      plan: withProjection({
         summary: "Remove full-row duplicates and blank rows.",
         ops: [{ op: "dedupe", strategy: "full_row" }],
         columnMappings: [],
         warnings: ["Blank-row cleanup applied via full-row dedupe."],
-      },
+      }),
       notes: ["Deterministic clean."],
     };
   }

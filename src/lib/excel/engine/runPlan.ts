@@ -1,11 +1,11 @@
 // Plan orchestrator. Reads inputs, dispatches ops through the registry,
 // finalises the workbook, returns bytes + stats.
 import ExcelJS from "exceljs";
-import type { Plan } from "../types";
+import type { Plan, PlanOp } from "../types";
 import type { EngineFile, EngineResult } from "./types";
 import { readWorkbook, sheetToGrid, writeGridToSheet } from "./shared/workbook";
 import type { CellValue } from "./shared/workbook";
-import { getOpHandler, type EngineState, type OpCtx } from "./registry";
+import { applyProjection, getOpHandler, type EngineState, type OpCtx } from "./registry";
 import { recalcFormulas } from "./ops/highlight";
 import "./ops"; // side-effect: register all ops
 
@@ -33,6 +33,17 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
     producedSheets: 0,
   };
 
+  const ctxBase = {
+    files,
+    grids,
+    outWb,
+    state,
+    warnings,
+    opLogs,
+    projection: plan.projection ?? null,
+    projectionEvents: [] as OpCtx["projectionEvents"],
+  };
+
   const startAll = Date.now();
   for (let i = 0; i < plan.ops.length; i++) {
     const op = plan.ops[i];
@@ -46,7 +57,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
         opLogs.push({ op: op.op, status: "skipped", reason: "no handler registered" });
         continue;
       }
-      const ctx: OpCtx = { files, grids, outWb, state, warnings, opLogs, started };
+      const ctx: OpCtx = { ...ctxBase, started };
       await handler(op, ctx);
       console.info(`[engine] ${label} done in ${Date.now() - started}ms`);
     } catch (e) {
@@ -58,7 +69,22 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
   }
 
   if (hasMutating) {
-    writeGridToSheet(outWb, "Result", state.currentGrid, { highlightRows: state.unmatched });
+    // Compute alwaysKeep for the final "Result" sheet from the ops that fed it.
+    const alwaysKeep: string[] = [];
+    for (const o of plan.ops) {
+      if (o.op === "merge") {
+        alwaysKeep.push((o as Extract<PlanOp, { op: "merge" }>).keyColumn, "Sources");
+      } else if (o.op === "dedupe") {
+        const k = (o as Extract<PlanOp, { op: "dedupe" }>).keyColumn;
+        if (k) alwaysKeep.push(k);
+      } else if (o.op === "highlight_column") {
+        alwaysKeep.push((o as Extract<PlanOp, { op: "highlight_column" }>).column);
+      }
+    }
+    const finalCtx: OpCtx = { ...ctxBase, started: Date.now() };
+    const projectedResult = applyProjection(finalCtx, "Result", state.currentGrid, { alwaysKeep });
+    // Row highlight indices are stable across projection (row order preserved).
+    writeGridToSheet(outWb, "Result", projectedResult, { highlightRows: state.unmatched });
     state.producedSheets++;
     const resultWs = outWb.getWorksheet("Result");
     if (resultWs) {
@@ -85,6 +111,9 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
 
   stats.totalMs = Date.now() - startAll;
   stats.producedSheets = state.producedSheets;
+  if (ctxBase.projectionEvents.length > 0) {
+    stats.projection = ctxBase.projectionEvents;
+  }
 
   const out = await outWb.xlsx.writeBuffer();
   return { buffer: Buffer.from(out), stats, warnings };

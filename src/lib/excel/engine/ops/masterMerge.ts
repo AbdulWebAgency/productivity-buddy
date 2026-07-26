@@ -2,7 +2,7 @@ import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { safeSheetName, writeGridToSheet } from "../shared/workbook";
-import { registerOp } from "../registry";
+import { registerOp, applyProjection } from "../registry";
 
 export type MasterMergeResult = {
   master: SheetGrid;
@@ -188,8 +188,10 @@ registerOp<Extract<PlanOp, { op: "master_merge" }>>("master_merge", (op, ctx) =>
     ctx.files.map((f) => f.name),
     op,
   );
-  writeGridToSheet(ctx.outWb, "Master", m.master);
+  const projectedMaster = applyProjection(ctx, "Master", m.master, { alwaysKeep: [op.keyColumn] });
+  writeGridToSheet(ctx.outWb, "Master", projectedMaster);
   ctx.state.producedSheets++;
+  // "Merge Summary" and "Missing in <file>" are diagnostic — skip projection.
   writeGridToSheet(ctx.outWb, "Merge Summary", m.summary);
   ctx.state.producedSheets++;
   for (const mp of m.missingPerFile) {

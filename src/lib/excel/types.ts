@@ -51,6 +51,15 @@ export const OpSchema = z.discriminatedUnion("op", [
 
 ]);
 
+// Output shaping. Only `columns` is functional in Sprint 3.1; the object shape
+// leaves room for excludeColumns / renameColumns / reorderColumns / computed
+// columns later without another schema redesign.
+export const ProjectionSchema = z
+  .object({
+    columns: z.array(z.string().min(1)).optional(),
+  })
+  .optional();
+
 export const PlanSchema = z.object({
   summary: z.string().max(500).default(""),
   ops: z.array(OpSchema).min(1).max(10),
@@ -63,6 +72,7 @@ export const PlanSchema = z.object({
     )
     .default([]),
   warnings: z.array(z.string()).default([]),
+  projection: ProjectionSchema,
 });
 
 export type Plan = z.infer<typeof PlanSchema>;

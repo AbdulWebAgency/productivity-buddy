@@ -1,3 +1,4 @@
+import ReactMarkdown from "react-markdown";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -17,24 +18,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
-import {
-  Upload,
-  X,
-  Loader2,
-  FileSpreadsheet,
-  Play,
-  Download,
-  ArrowLeft,
-  Sparkles,
-  History,
-  Send,
-} from "lucide-react";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Upload, X, Loader2, FileSpreadsheet, Play, Download, ArrowLeft, Sparkles, History, Send } from "lucide-react";
 import { toast } from "sonner";
 import type { Plan } from "@/lib/excel/types";
 
@@ -111,9 +96,7 @@ function WorkspacePage() {
         const path = `${userData.user.id}/workspaces/${workspaceId}/${Date.now()}-${i}-${safe}`;
         const { error } = await supabase.storage.from("excel-uploads").upload(path, file, {
           upsert: true,
-          contentType:
-            file.type ||
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          contentType: file.type || "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         });
         if (error) throw new Error(error.message);
         uploaded.push({ storagePath: path, originalName: file.name, sizeBytes: file.size });
@@ -250,12 +233,7 @@ function WorkspacePage() {
               className="min-h-[52px] resize-none"
               disabled={send.isPending}
             />
-            <Button
-              size="icon"
-              onClick={submit}
-              disabled={send.isPending || !text.trim()}
-              title="Send"
-            >
+            <Button size="icon" onClick={submit} disabled={send.isPending || !text.trim()} title="Send">
               <Send className="h-4 w-4" />
             </Button>
           </div>
@@ -316,9 +294,7 @@ function FilesPanel({
         </label>
 
         {files.length === 0 ? (
-          <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-            No files yet. Upload to start.
-          </div>
+          <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">No files yet. Upload to start.</div>
         ) : (
           <Accordion type="multiple" className="w-full">
             {files.map((f) => (
@@ -327,9 +303,7 @@ function FilesPanel({
                   <AccordionTrigger className="flex-1 py-2 text-left text-xs hover:no-underline">
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-medium">{f.original_name}</div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {(f.size_bytes / 1024).toFixed(0)} KB
-                      </div>
+                      <div className="text-[10px] text-muted-foreground">{(f.size_bytes / 1024).toFixed(0)} KB</div>
                     </div>
                   </AccordionTrigger>
                   <button
@@ -424,11 +398,22 @@ function MessageBubble({
             : "max-w-[85%] space-y-2 text-sm text-foreground"
         }
       >
-        <div className="whitespace-pre-wrap text-sm">{message.content}</div>
+        <div className="text-sm">
+          <ReactMarkdown
+            components={{
+              p: ({ children }) => <p className="whitespace-pre-wrap mb-2 last:mb-0">{children}</p>,
+              ul: ({ children }) => <ul className="list-disc pl-5 mb-2">{children}</ul>,
+              ol: ({ children }) => <ol className="list-decimal pl-5 mb-2">{children}</ol>,
+              li: ({ children }) => <li className="mb-1">{children}</li>,
+              strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+              code: ({ children }) => <code className="rounded bg-muted px-1 py-0.5 text-xs">{children}</code>,
+            }}
+          >
+            {message.content}
+          </ReactMarkdown>
+        </div>
 
-        {tool?.kind === "plan" && (
-          <PlanCard plan={tool.plan} onRun={() => onRun(tool.plan)} running={running} />
-        )}
+        {tool?.kind === "plan" && <PlanCard plan={tool.plan} onRun={() => onRun(tool.plan)} running={running} />}
 
         {tool?.kind === "result" && (
           <ResultCard
@@ -444,15 +429,7 @@ function MessageBubble({
   );
 }
 
-function PlanCard({
-  plan,
-  onRun,
-  running,
-}: {
-  plan: Plan;
-  onRun: () => void;
-  running: boolean;
-}) {
+function PlanCard({ plan, onRun, running }: { plan: Plan; onRun: () => void; running: boolean }) {
   return (
     <Card className="border-primary/30 bg-secondary/40">
       <CardContent className="space-y-3 p-3">
@@ -463,23 +440,37 @@ function PlanCard({
           {plan.ops.map((op, i) => (
             <li key={i}>
               {op.op === "merge" && (
-                <>Merge all files on <b>{op.keyColumn}</b> ({op.strategy})</>
+                <>
+                  Merge all files on <b>{op.keyColumn}</b> ({op.strategy})
+                </>
               )}
               {op.op === "dedupe" && (
-                <>Remove duplicates {op.keyColumn ? <>by <b>{op.keyColumn}</b></> : "(full row)"}</>
+                <>
+                  Remove duplicates{" "}
+                  {op.keyColumn ? (
+                    <>
+                      by <b>{op.keyColumn}</b>
+                    </>
+                  ) : (
+                    "(full row)"
+                  )}
+                </>
               )}
               {op.op === "diff" && (
-                <>Compare files on <b>{op.keyColumn}</b> and list differences</>
+                <>
+                  Compare files on <b>{op.keyColumn}</b> and list differences
+                </>
               )}
               {op.op === "summary" && <>Add a summary sheet</>}
               {op.op === "highlight_column" && (
-                <>Highlight {op.rule} values in <b>{op.column}</b></>
+                <>
+                  Highlight {op.rule} values in <b>{op.column}</b>
+                </>
               )}
               {op.op === "recalc" && <>Recalculate formulas</>}
               {op.op === "master_merge" && (
                 <>
-                  Create master sheet on <b>{op.keyColumn}</b> ({op.joinType} join, keep{" "}
-                  {op.dupeStrategy})
+                  Create master sheet on <b>{op.keyColumn}</b> ({op.joinType} join, keep {op.dupeStrategy})
                 </>
               )}
               {op.op === "bulk_lookup" && (
@@ -487,7 +478,6 @@ function PlanCard({
                   Bulk lookup of <b>{op.queries.length}</b> value(s) in file #{op.fileIndex + 1}
                 </>
               )}
-
             </li>
           ))}
         </ul>
@@ -495,11 +485,7 @@ function PlanCard({
           <div className="text-xs text-muted-foreground">Notes: {plan.warnings.join("; ")}</div>
         )}
         <Button size="sm" onClick={onRun} disabled={running}>
-          {running ? (
-            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Play className="mr-2 h-3.5 w-3.5" />
-          )}
+          {running ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-2 h-3.5 w-3.5" />}
           Run
         </Button>
       </CardContent>
@@ -549,13 +535,7 @@ function ResultCard({
 
 // ---------- Versions panel ----------
 
-function VersionsPanel({
-  versions,
-  onDownload,
-}: {
-  versions: VersionRow[];
-  onDownload: (id: string) => void;
-}) {
+function VersionsPanel({ versions, onDownload }: { versions: VersionRow[]; onDownload: (id: string) => void }) {
   return (
     <Card>
       <CardHeader className="pb-2">
@@ -587,9 +567,7 @@ function VersionsPanel({
                     <Download className="h-3.5 w-3.5" />
                   </button>
                 </div>
-                <div className="mt-1 text-[10px] text-muted-foreground">
-                  {new Date(v.created_at).toLocaleString()}
-                </div>
+                <div className="mt-1 text-[10px] text-muted-foreground">{new Date(v.created_at).toLocaleString()}</div>
               </li>
             ))}
           </ol>

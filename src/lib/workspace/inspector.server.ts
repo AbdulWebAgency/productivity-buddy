@@ -1,6 +1,7 @@
 // Server-only Excel inspector: analyze a workbook beyond sheet meta.
 import type ExcelJS from "exceljs";
 import { detectHeaderRow } from "@/lib/excel/header-detection";
+import { KEY_HINTS, normalizeHeader } from "@/lib/excel/engine/shared/headers";
 
 export type InspectorReport = {
   sheets: {
@@ -16,34 +17,10 @@ export type InspectorReport = {
   warnings: string[];
 };
 
-const KEY_HINTS = [
-  "registration",
-  "reg no",
-  "regno",
-  "roll",
-  "student id",
-  "employee id",
-  "user id",
-  "email",
-  "phone",
-  "mobile",
-  "code",
-  "id",
-  "number",
-  "sl no",
-  "serial",
-];
-
-function norm(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .replace(/[._\-]+/g, " ")
-    .replace(/\s+/g, " ");
-}
-
+// Inspector-specific scoring: sums matching hint lengths (weights compound
+// matches) — kept distinct from the max-based scoreKey used by the planner.
 function scoreHeader(h: string): number {
-  const n = norm(h);
+  const n = normalizeHeader(h);
   let s = 0;
   for (const hint of KEY_HINTS) if (n.includes(hint)) s += hint.length;
   return s;

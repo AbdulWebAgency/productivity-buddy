@@ -484,33 +484,29 @@ export function opMasterMerge(
   grids.forEach((g, fi) => {
     g.headers.forEach((h, ci) => {
       if (ci === keyIdxs[fi] || !h) return;
- const existingIndex = headers.findIndex(
-  (x) => x.trim().toLowerCase() === h.trim().toLowerCase(),
-);
+      const existingIndex = headers.findIndex((x) => x.trim().toLowerCase() === h.trim().toLowerCase());
 
-if (existingIndex >= 0) {
-  columnMeta[existingIndex]!.sources.push({
-    fileIdx: fi,
-    sourceHeader: h,
-  });
-} else {
-  usedNames.add(h.toLowerCase());
+      if (existingIndex >= 0) {
+        columnMeta[existingIndex]!.sources.push({
+          fileIdx: fi,
+          sourceHeader: h,
+        });
+      } else {
+        usedNames.add(h.toLowerCase());
 
-  headers.push(h);
+        headers.push(h);
 
-  columnMeta.push({
-    sources: [
-      {
-        fileIdx: fi,
-        sourceHeader: h,
-      },
-    ],
-  });
-}
+        columnMeta.push({
+          sources: [
+            {
+              fileIdx: fi,
+              sourceHeader: h,
+            },
+          ],
+        });
+      }
     });
   });
-
-
 
   const byKey = new Map<string, { row: CellValue[]; seenIn: Set<number>; dupCount: number }>();
   const keyOrder: string[] = [];
@@ -536,10 +532,14 @@ if (existingIndex >= 0) {
       // Fill this file's columns
       for (let ti = 1; ti < headers.length; ti++) {
         const cm = columnMeta[ti];
-        if (!cm || !cm.sources.some((s) => s.fileIdx === fi)) continue;
-        const src = cm.sources.find((s) => s.fileIdx === fi)!;
-        const srcIdx = g.headers.indexOf(src.sourceHeader);
+        if (!cm) continue;
+
+        const source = cm.sources.find((s) => s.fileIdx === fi);
+        if (!source) continue;
+
+        const srcIdx = g.headers.indexOf(source.sourceHeader);
         if (srcIdx < 0) continue;
+
         const newVal = r[srcIdx];
         const cur = entry.row[ti];
         if (cur == null || cur === "") {

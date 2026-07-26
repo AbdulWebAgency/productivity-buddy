@@ -31,13 +31,7 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
 
 // ---------- Deterministic greeting after upload ----------
 
-function norm(s: string): string {
-  return s
-    .trim()
-    .toLowerCase()
-    .replace(/[._\-]+/g, " ")
-    .replace(/\s+/g, " ");
-}
+import { normalizeHeader as norm, scoreKey } from "@/lib/excel/engine/shared/headers";
 
 function keysSharedAcross(files: WorkspaceFileCtx[]): string[] {
   if (files.length === 0) return [];
@@ -56,30 +50,6 @@ function keysSharedAcross(files: WorkspaceFileCtx[]): string[] {
     if (rest.every((s) => s.has(k))) shared.push(displayFor.get(k) ?? k);
   }
   return shared;
-}
-
-const KEY_HINTS = [
-  "registration",
-  "reg no",
-  "regno",
-  "roll",
-  "student id",
-  "employee id",
-  "user id",
-  "email",
-  "phone",
-  "mobile",
-  "code",
-  "id no",
-  "id",
-  "number",
-];
-
-function scoreKey(name: string): number {
-  const n = norm(name);
-  let s = 0;
-  for (const h of KEY_HINTS) if (n.includes(h)) s = Math.max(s, h.length);
-  return s;
 }
 
 export function pickBestSharedKey(files: WorkspaceFileCtx[]): string | null {

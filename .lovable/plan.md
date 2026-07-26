@@ -1,97 +1,94 @@
-# Master Sheet + Bulk Lookup
+# Sprint 3.0 — Architecture Refactor Plan
 
-Add two new deterministic actions to the existing Workspace — no redesign, no AI dependency, reuses the current engine, planner, versioning, and download flow.
+Goal: improve internal structure of the Excel engine and planner without changing any behaviour, prompts, UI, or data.
 
-## What the user gets
+## Current state (measured)
 
-Two new items appear in the workspace's suggestion chip row (and as commands the chat also recognises):
+- `src/lib/excel/engine.server.ts` — **1,069 lines**. Contains 8 op implementations (`opMerge`, `opDedupe`, `opDiff`, `opIntersection`, `opSummary`, `opMasterMerge`, `opBulkLookup`, `recalcFormulas`), workbook I/O (`readWorkbook`, `extractSheetMeta`, `sheetToGrid`, `writeGridToSheet`), styling helpers (`styleHeader`, `autoWidth`), header matching (`findColumnIndex`), and the `runPlan` orchestrator.
+- Header normalization is duplicated in **4 files** with slightly different rules:
+  - `engine.server.ts::findColumnIndex` — fuzzy resolver (normalize + substring + token subset)
+  - `deterministic-plan.ts::norm` — planner-side normalization
+  - `inspector.server.ts::norm` — inspector normalization
+  - `suggestions.ts` — inline `.trim().toLowerCase()` for shared-header detection
+- Op dispatch happens as a `switch` inside `runPlan`; `types.ts` defines the Zod discriminated union; `plan-repair.ts` has its own op-name allowlist; `friendly-errors.ts` has a per-op summarizer. Adding an op today requires touching 4–5 unrelated files.
 
-1. **Create Master Sheet** — one-click multi-file merge (2–10 files) → downloadable Master workbook with summary + missing sheets.
-2. **Bulk Lookup** — paste a list of IDs / names / emails, pick a workspace file or the latest master, get a filtered result workbook.
+## Target structure
 
-No changes to the three-pane layout, colors, typography, auth, or version-history UI.
-
-## Create Master Sheet
-
-Flow (deterministic, AI is only a fallback for header confidence):
-
-1. User clicks the chip or types "create master sheet" / "merge all files".
-2. New planner path `planMaster()` runs:
-   - Inspects each file's first sheet headers (already cached in `workspace_files.inspector`).
-   - Builds candidate merge keys by scoring header names against known aliases:
-     `student id ~ id ~ reg no ~ registration number ~ roll no ~ roll number ~ email ~ email address ~ mobile ~ phone`.
-     Score = alias match (3) + appears in ≥2 files (2) + high uniqueness in each file (2) + ID-shaped values (1).
-   - **One strong key** (score ≥ 6 and unique in every file it appears in): auto-select, produce plan, run.
-   - **Multiple candidates within 1 point**: emit a `clarify` message with chips ("Use Reg No", "Use Email", …). Reuses the existing clarify pipeline in `sendMessage`.
-   - **No shared key**: emit a friendly error explaining which files lack a shared key.
-3. Executes a new engine op `master_merge` (see below) → writes a single `.xlsx` workspace version labelled `Master sheet (key: <col>)`.
-
-Options exposed as follow-up chat commands (deterministic parse — no AI):
-- "use left join" / "inner join" / "append" — default is full outer.
-- "keep first" / "keep latest" / "merge duplicates" — default is keep first, with a warning row count.
-
-## Bulk Lookup
-
-1. User clicks "Bulk Lookup" chip → composer is pre-filled with:
-   ```
-   Bulk lookup in <filename>:
-   <paste IDs, names, or emails here — one per line>
-   ```
-2. `sendMessage` deterministically detects `bulk lookup` intent, parses the target filename (defaults to the newest master version if omitted) and the list of query values.
-3. New engine op `bulk_lookup` scans the chosen workbook's first sheet for matches across all "key-ish" columns (id, email, name, roll, reg) — case- and whitespace-insensitive, substring match for names.
-4. Produces a workspace version `Bulk lookup (<n> queries)` — a workbook with:
-   - `Results` sheet: matched rows with source columns preserved + `Matched On` column.
-   - `Not Found` sheet: queries with no match.
-
-## Engine ops (extend, don't duplicate)
-
-`src/lib/excel/engine.server.ts`:
-
-- `opMasterMerge({ keyColumn, joinType, dupeStrategy })` — builds one wide table by outer/inner/left-joining every file's first sheet on the resolved key column (using existing fuzzy column resolver). Emits:
-  - `Master` sheet — union of all columns, prefixed with file short-name on collision.
-  - `Missing in <file>` sheets — key values present in the union but not in that file.
-  - `Merge Summary` sheet — total rows, matched, per-file missing counts, duplicate count, key used, join type.
-- `opBulkLookup({ file, queries })` — reads the target file, indexes candidate key columns, returns matched rows.
-
-Both go through `runPlan`, so the existing per-op logging, timing, stats, warnings, and "no output" guard rails already apply. Downloads, version rows, and stats JSON reuse the current pipeline.
-
-## Types + plan schema
-
-`src/lib/excel/types.ts` — add two ops to `OpSchema`:
-```ts
-{ op: 'master_merge', keyColumn, joinType: 'outer'|'inner'|'left'|'append', dupeStrategy: 'first'|'latest'|'merge' }
-{ op: 'bulk_lookup', fileIndex, queries: string[] }
+```text
+src/lib/excel/
+  engine.server.ts         # thin: re-exports runPlan + public API only
+  engine/
+    runPlan.ts             # orchestrator; iterates registry
+    registry.ts            # OperationRegistry: id -> { schema, run, summarize? }
+    ops/
+      diff.ts
+      merge.ts
+      intersection.ts
+      masterMerge.ts
+      bulkLookup.ts
+      summary.ts
+      dedupe.ts
+      highlight.ts         # highlight_column + recalc live here
+    shared/
+      headers.ts           # canonical normalize() + resolveColumn() + scoreKey()
+      workbook.ts          # readWorkbook, sheetToGrid, writeGridToSheet, extractSheetMeta, safeSheetName
+      styling.ts           # styleHeader, autoWidth
+  header-detection.ts      # unchanged (row-scan heuristic)
+  deterministic-plan.ts    # switches to shared/headers
+  intent.ts                # unchanged
+  plan-repair.ts           # unchanged for now (op list stays in types.ts)
+  types.ts                 # unchanged public shape
 ```
-`plan-repair.ts` — recognise these ops; if fields missing, fill defaults (outer, first).
 
-## Planner glue
+`src/lib/workspace/inspector.server.ts` and `suggestions.ts` also switch to `engine/shared/headers.ts`.
 
-`src/lib/excel/deterministic-plan.ts`:
-- Add `planMaster(files)` and `planBulkLookup(files, text)`.
-- Add intent classifier keywords: `master sheet`, `combine all files`, `merge everything`, `bulk lookup`, `bulk search`, `lookup these`.
-- Keep existing diff/intersection/dedupe intents untouched.
+## Operation Registry shape
 
-## Suggestions
+```ts
+// engine/registry.ts
+export type OpRunCtx = { files: EngineFile[]; wb: ExcelJS.Workbook; result: EngineResult };
+export type OpHandler<Op extends PlanOp = PlanOp> = (op: Op, ctx: OpRunCtx) => Promise<void> | void;
+export interface OperationDef<Op extends PlanOp = PlanOp> {
+  id: Op["op"];
+  run: OpHandler<Op>;
+}
+export const operationRegistry = new Map<PlanOp["op"], OperationDef>();
+export function registerOp<Op extends PlanOp>(def: OperationDef<Op>): void;
+```
 
-`src/lib/workspace/suggestions.ts` — when `files.length >= 2` push:
-- `Create Master Sheet` → prompt `Create a master sheet by merging all uploaded files.`
-- `Bulk Lookup` (always when at least one file) → prompt `Bulk lookup in <newest file>:\n`
+Each `ops/*.ts` file self-registers on import; `runPlan.ts` imports the barrel `ops/index.ts` once, then dispatches `operationRegistry.get(op.op).run(op, ctx)`. Op schemas continue to live in `types.ts` — moving them would risk changing the discriminated union type surface and breaking plan-repair. This keeps the registry a pure runtime concern.
 
-The chips already render in the composer; nothing else in the UI changes.
+## Unified header utility (`engine/shared/headers.ts`)
 
-## Out of scope
+Single source of truth exposing:
+- `normalizeHeader(s: string): string` — the current `norm()` (trim, lowercase, collapse `._-`, collapse whitespace). Replaces the 4 duplicates.
+- `resolveColumn(headers: string[], name: string): number` — current `findColumnIndex` (exact → normalized → substring → token-subset).
+- `scoreKey(header: string): number` — current planner + inspector heuristic (KEY_HINTS-based).
+- `KEY_HINTS` — the one shared array.
 
-No AI merging, no OCR, no PDFs, no auth changes, no payment flows, no MCP work, no redesign.
+Behaviour is preserved by taking the existing implementations verbatim; no algorithmic change.
 
-## Files touched
+## Risks & mitigations
 
-- `src/lib/excel/types.ts` — 2 new op schemas
-- `src/lib/excel/engine.server.ts` — `opMasterMerge`, `opBulkLookup`, wire into `runPlan`
-- `src/lib/excel/deterministic-plan.ts` — new intents + planners
-- `src/lib/excel/plan-repair.ts` — repair defaults for new ops
-- `src/lib/excel/intent.ts` — `master_merge`, `bulk_lookup` intent labels
-- `src/lib/workspace.functions.ts` — describePlan / planLabel / summarizeRun cases
-- `src/lib/workspace/suggestions.ts` — two new chips
-- `src/routes/_authenticated/app.w.$workspaceId.tsx` — render new op summaries in `PlanCard` (2 extra `op.op === …` branches, no layout changes)
+- **Risk: engine barrel splitting can accidentally drop a helper referenced across ops.** Mitigation: move file-by-file, keep `engine.server.ts` re-exporting the same public symbols so no importer changes, run typecheck after each move.
+- **Risk: header hint list changes ranking behaviour.** Mitigation: use `deterministic-plan.ts`'s KEY_HINTS (longer list) as canonical; inspector's shorter list is a strict subset — verified.
+- **Risk: self-registering ops rely on import side effects; tree-shaking or SSR-only import order could drop one.** Mitigation: single explicit barrel `ops/index.ts` imported by `runPlan.ts` (side-effect import), listed statically.
+- **Risk: `.server.ts` filename guard.** Files under `engine/` that touch ExcelJS must keep the `.server.ts` suffix or live under an already-guarded path. Plan: name each op file `diff.ts` etc. but keep the whole `engine/` folder imported only from `engine.server.ts` (which is already server-only), so the import-protection chain is preserved.
+- **Risk: circular imports between registry and ops.** Mitigation: `registry.ts` holds only the Map + `registerOp`; ops import types from `types.ts` and helpers from `shared/*`, never from `runPlan.ts`.
 
-Everything else — versions panel, download, inspector, chat rendering, auth, storage buckets — is untouched.
+## Execution order (small, verifiable steps)
+
+1. **Create `engine/shared/`** — extract `workbook.ts`, `styling.ts`, `headers.ts` from `engine.server.ts`. Replace originals with re-exports. Typecheck.
+2. **Point planner/inspector/suggestions at `shared/headers.ts`** — delete their local `norm`/KEY_HINTS. Typecheck.
+3. **Introduce `engine/registry.ts` + `engine/runPlan.ts`** — move current `runPlan` body in, but keep the `switch` temporarily. Re-export from `engine.server.ts`. Typecheck.
+4. **Extract ops one at a time** in this order (safest → riskiest): `dedupe`, `summary`, `intersection`, `diff`, `merge`, `bulkLookup`, `masterMerge`, `highlight` (+ `recalc`). After each: register the op, delete its `switch` arm, typecheck.
+5. **Delete the switch** once every op is registered; `runPlan` becomes a pure registry loop.
+6. **Final pass**: shrink `engine.server.ts` to a re-export shim so all existing imports (`@/lib/excel/engine.server`) keep resolving unchanged.
+
+Verification after every step: `tsgo` typecheck + a manual smoke of upload → diff → download in the preview to confirm identical output.
+
+## Out of scope (explicitly)
+
+- No prompt changes, no UI changes, no schema/migration changes, no new ops, no perf work, no test additions. `plan-repair.ts` and `intent.ts` are left alone.
+
+Awaiting approval before step 1.

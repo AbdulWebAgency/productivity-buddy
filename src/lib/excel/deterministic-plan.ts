@@ -6,35 +6,13 @@
 
 import type { Plan, PlanOp } from "./types";
 import { classifyIntent, type Intent } from "./intent";
+import { normalizeHeader as norm, scoreKey } from "./engine/shared/headers";
 
 export type FileForAi = {
   index: number;
   name: string;
   sheets: { name: string; headers: string[] }[];
 };
-
-const KEY_HINTS = [
-  "registration",
-  "reg no",
-  "regno",
-  "roll",
-  "student id",
-  "employee id",
-  "user id",
-  "email",
-  "phone",
-  "mobile",
-  "code",
-  "id no",
-  "id",
-  "number",
-  "sl no",
-  "serial",
-];
-
-function norm(s: string): string {
-  return s.trim().toLowerCase().replace(/[._\-]+/g, " ").replace(/\s+/g, " ");
-}
 
 function fileHeaders(f: FileForAi): string[] {
   return f.sheets[0]?.headers ?? [];
@@ -60,15 +38,6 @@ function commonColumns(files: FileForAi[]): { display: string; perFile: string[]
     if (all) out.push({ display, perFile });
   }
   return out;
-}
-
-// Score shared columns by "keyness". A single top-scoring column is used
-// automatically. Ties across multiple strong keys trigger clarification.
-function scoreKey(display: string): number {
-  const n = norm(display);
-  let score = 0;
-  for (const h of KEY_HINTS) if (n.includes(h)) score = Math.max(score, h.length);
-  return score;
 }
 
 function pickBestKey(

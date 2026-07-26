@@ -490,7 +490,14 @@ export function opMasterMerge(
       while (usedNames.has(name.toLowerCase())) name = `${h} (${shortName(fileNames[fi])} ${i++})`;
       usedNames.add(name.toLowerCase());
       headers.push(name);
-      columnMeta.push({ fileIdx: fi, sourceHeader: h });
+      columnMeta.push({
+        sources: [
+          {
+            fileIdx: fi,
+            sourceHeader: h,
+          },
+        ],
+      });
     });
   });
 

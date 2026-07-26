@@ -472,7 +472,12 @@ export function opMasterMerge(
 
   // Build canonical headers: key first, then per-file columns (suffix on collision).
   const headers: string[] = [op.keyColumn];
-  type Col = { fileIdx: number; sourceHeader: string };
+  type Col = {
+    sources: {
+      fileIdx: number;
+      sourceHeader: string;
+    }[];
+  };
   const columnMeta: (Col | null)[] = [null];
   const usedNames = new Set<string>([op.keyColumn.toLowerCase()]);
 

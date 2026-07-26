@@ -6,7 +6,7 @@
 
 import type { Plan, PlanOp } from "./types";
 import { classifyIntent, type Intent } from "./intent";
-import { normalizeHeader as norm, scoreKey } from "./engine/shared/headers";
+import { normalizeHeader as norm, scoreKey, resolveColumn } from "./engine/shared/headers";
 
 export type FileForAi = {
   index: number;
@@ -16,6 +16,67 @@ export type FileForAi = {
 
 function fileHeaders(f: FileForAi): string[] {
   return f.sheets[0]?.headers ?? [];
+}
+
+// Extract "give me only Name, Reg No and Email"-style column requests.
+// Returns undefined when no candidate resolves against the union of file
+// headers — projection is best-effort and never blocks a plan.
+function extractProjection(
+  text: string,
+  files: FileForAi[],
+): { columns: string[] } | undefined {
+  const patterns: RegExp[] = [
+    /(?:give me|show(?:ing)?|return|include|with (?:the )?columns?|only (?:the )?columns?|only|just)\s+(?:the\s+)?(?:columns?\s+)?([^.\n?!]+)/i,
+    /\bcolumns?\s*[:=]\s*([^.\n?!]+)/i,
+  ];
+  let candidates: string[] = [];
+  for (const re of patterns) {
+    const m = text.match(re);
+    if (!m) continue;
+    const raw = m[1]
+      .replace(/\band\b/gi, ",")
+      .split(/[,;]/)
+      .map((s) => s.trim().replace(/^["'`]|["'`]$/g, ""))
+      .filter(Boolean);
+    if (raw.length > 0) {
+      candidates = raw;
+      break;
+    }
+  }
+  if (candidates.length === 0) return undefined;
+
+  const stop = new Set([
+    "the",
+    "a",
+    "an",
+    "please",
+    "thanks",
+    "rows",
+    "row",
+    "all",
+    "everything",
+    "data",
+    "records",
+    "students",
+    "entries",
+    "results",
+    "them",
+    "these",
+    "those",
+  ]);
+  const cleaned = candidates.filter(
+    (c) => c.length >= 2 && c.length <= 60 && !stop.has(c.toLowerCase()),
+  );
+  if (cleaned.length === 0) return undefined;
+
+  // Union of all file headers — projection is engine-agnostic, so any file
+  // with a matching column is enough to accept the candidate.
+  const unionHeaders = Array.from(
+    new Set(files.flatMap((f) => fileHeaders(f))),
+  );
+  const anyResolves = cleaned.some((name) => resolveColumn(unionHeaders, name) >= 0);
+  if (!anyResolves) return undefined;
+  return { columns: cleaned };
 }
 
 function commonColumns(files: FileForAi[]): { display: string; perFile: string[] }[] {

@@ -2,7 +2,7 @@ import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { writeGridToSheet } from "../shared/workbook";
-import { registerOp } from "../registry";
+import { registerOp, applyProjection } from "../registry";
 
 export function opIntersection(
   a: SheetGrid,
@@ -56,7 +56,8 @@ registerOp<Extract<PlanOp, { op: "intersection" }>>("intersection", (op, ctx) =>
   const nameB = ctx.files[bIdx].name;
   const inter = opIntersection(a, b, op, nameA, nameB);
   const sheetName = "Common rows";
-  writeGridToSheet(ctx.outWb, sheetName, inter.grid);
+  const projected = applyProjection(ctx, sheetName, inter.grid, { alwaysKeep: [op.keyColumn] });
+  writeGridToSheet(ctx.outWb, sheetName, projected);
   ctx.state.producedSheets++;
   ctx.opLogs.push({
     op: "intersection",

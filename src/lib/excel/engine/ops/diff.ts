@@ -2,7 +2,7 @@ import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { safeSheetName, writeGridToSheet } from "../shared/workbook";
-import { registerOp } from "../registry";
+import { registerOp, applyProjection } from "../registry";
 
 export type DiffResult = {
   missingInA: SheetGrid; // rows present in B but not A (add to A)
@@ -123,14 +123,17 @@ registerOp<Extract<PlanOp, { op: "diff" }>>("diff", (op, ctx) => {
   const sheetOnlyInB = `Only in ${safeSheetName(nameB)}`; // rows from B whose key isn't in A
   const sheetOnlyInA = `Only in ${safeSheetName(nameA)}`; // rows from A whose key isn't in B
   if (d.missingInA.rows.length > 0) {
-    writeGridToSheet(ctx.outWb, sheetOnlyInB, d.missingInA);
+    const projected = applyProjection(ctx, sheetOnlyInB, d.missingInA, { alwaysKeep: [op.keyColumn] });
+    writeGridToSheet(ctx.outWb, sheetOnlyInB, projected);
     ctx.state.producedSheets++;
   }
   if (d.missingInB.rows.length > 0) {
-    writeGridToSheet(ctx.outWb, sheetOnlyInA, d.missingInB);
+    const projected = applyProjection(ctx, sheetOnlyInA, d.missingInB, { alwaysKeep: [op.keyColumn] });
+    writeGridToSheet(ctx.outWb, sheetOnlyInA, projected);
     ctx.state.producedSheets++;
   }
   if (d.changed.rows.length > 0) {
+    // Diagnostic sheet — always [key, "Changed Columns"], skip projection.
     writeGridToSheet(ctx.outWb, "Changed rows", d.changed);
     ctx.state.producedSheets++;
   }

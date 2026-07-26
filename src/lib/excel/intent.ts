@@ -14,7 +14,6 @@ export type Intent =
   | "capabilities" // "what can you do"
   | "unknown";
 
-
 export type IntentMatch = {
   intent: Intent;
   side?: "A" | "B" | "either"; // for difference: only in A, only in B, or either side
@@ -25,12 +24,18 @@ export type IntentMatch = {
 // Ordered phrase lists — first match wins.
 const PATTERNS: { intent: Intent; side?: IntentMatch["side"]; re: RegExp }[] = [
   // Capabilities / help
-  { intent: "capabilities", re: /\b(what can you do|help|capabilities|features|how do you work|what.*can.*(you|this|ledgerly).*do)\b/i },
+  {
+    intent: "capabilities",
+    re: /\b(what can you do|help|capabilities|features|how do you work|what.*can.*(you|this|Productivity Buddy).*do)\b/i,
+  },
 
   // Intersection — "in both", "common", "shared", "matching"
   { intent: "intersection", re: /\b(present|available|exist|found|appear|listed)\s+(in\s+)?both\b/i },
   { intent: "intersection", re: /\bin\s+both(\s+files|\s+sheets|\s+workbooks)?\b/i },
-  { intent: "intersection", re: /\b(common|shared|matching|overlapping|repeated)\s+(students|rows|records|entries|people|names|items|values)\b/i },
+  {
+    intent: "intersection",
+    re: /\b(common|shared|matching|overlapping|repeated)\s+(students|rows|records|entries|people|names|items|values)\b/i,
+  },
   { intent: "intersection", re: /\b(same\s+(people|students|rows|records))\b/i },
   { intent: "intersection", re: /\b(who\s+is\s+in\s+both|which\s+are\s+in\s+both)\b/i },
   { intent: "intersection", re: /\b(repeated\s+across\s+(files|sheets))\b/i },
@@ -59,7 +64,6 @@ const PATTERNS: { intent: Intent; side?: IntentMatch["side"]; re: RegExp }[] = [
   // Merge
   { intent: "merge", re: /\b(merge|combine|consolidate|join|unify|union)\b/i },
   { intent: "merge", re: /\bappend\b/i },
-
 
   // Dedupe
   { intent: "dedupe", re: /\b(dedup|deduplicate|duplicate|duplicates|unique|uniq)\b/i },

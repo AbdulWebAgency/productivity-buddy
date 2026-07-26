@@ -73,7 +73,7 @@ function NewJob() {
     <div className="mx-auto max-w-2xl">
       <h1 className="text-4xl">New job</h1>
       <p className="mt-1 text-muted-foreground">
-        Upload workbooks, describe what should happen, and Ledgerly plans the ops.
+        Upload workbooks, describe what should happen, and Productivity Buddy plans the ops.
       </p>
 
       <Card className="mt-8">
@@ -100,9 +100,7 @@ function NewJob() {
               value={intent}
               onChange={(e) => setIntent(e.target.value)}
             />
-            <p className="text-xs text-muted-foreground">
-              Plain English. The AI will map this to concrete operations.
-            </p>
+            <p className="text-xs text-muted-foreground">Plain English. The AI will map this to concrete operations.</p>
           </div>
 
           <div className="space-y-2">
@@ -113,9 +111,7 @@ function NewJob() {
             >
               <Upload className="h-6 w-6 text-primary" />
               <div className="text-sm font-medium">Click to upload .xlsx files</div>
-              <div className="text-xs text-muted-foreground">
-                Up to 10 files · {MAX_FILE_MB} MB each
-              </div>
+              <div className="text-xs text-muted-foreground">Up to 10 files · {MAX_FILE_MB} MB each</div>
               <input
                 id="file-input"
                 type="file"
@@ -135,9 +131,7 @@ function NewJob() {
                   <li key={i} className="flex items-center gap-3 px-3 py-2 text-sm">
                     <FileSpreadsheet className="h-4 w-4 text-primary" />
                     <span className="flex-1 truncate">{f.name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {(f.size / 1024 / 1024).toFixed(2)} MB
-                    </span>
+                    <span className="text-xs text-muted-foreground">{(f.size / 1024 / 1024).toFixed(2)} MB</span>
                     <button
                       type="button"
                       onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}

@@ -14,13 +14,10 @@ function Landing() {
           <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
             <FileSpreadsheet className="h-4 w-4" />
           </span>
-          Ledgerly
+          Productivity Buddy
         </Link>
         <nav className="flex items-center gap-3">
-          <Link
-            to="/auth"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
+          <Link to="/auth" className="text-sm text-muted-foreground hover:text-foreground">
             Sign in
           </Link>
           <Button asChild size="sm">
@@ -43,9 +40,9 @@ function Landing() {
             </h1>
             <p className="mt-6 max-w-2xl text-lg text-muted-foreground">
               Upload spreadsheets, describe what needs to happen, and get a clean{" "}
-              <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-sm">.xlsx</code>{" "}
-              back — with formatting, headers and formulas intact. Built for teachers,
-              office staff and small teams juggling messy workbooks.
+              <code className="rounded bg-secondary px-1.5 py-0.5 font-mono text-sm">.xlsx</code> back — with
+              formatting, headers and formulas intact. Built for teachers, office staff and small teams juggling messy
+              workbooks.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Button asChild size="lg">
@@ -63,8 +60,8 @@ function Landing() {
         <section id="capabilities" className="border-t border-border py-20">
           <h2 className="text-3xl md:text-4xl">Capabilities</h2>
           <p className="mt-3 max-w-2xl text-muted-foreground">
-            The AI reasons about what to do. The engine does the work deterministically —
-            no invented cells, no LLM hallucinations in your data.
+            The AI reasons about what to do. The engine does the work deterministically — no invented cells, no LLM
+            hallucinations in your data.
           </p>
           <div className="mt-10 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
             {CAPABILITIES.map((c) => (
@@ -85,9 +82,8 @@ function Landing() {
             <div>
               <h2 className="text-3xl md:text-4xl">Your files, your rules.</h2>
               <p className="mt-4 text-muted-foreground">
-                Files are stored privately per user, processed in-region and deleted on
-                request. Row-level security means no one else can see your workbooks —
-                not even other Ledgerly users.
+                Files are stored privately per user, processed in-region and deleted on request. Row-level security
+                means no one else can see your workbooks — not even other Productivity Buddy users.
               </p>
               <div className="mt-6 flex items-center gap-3 text-sm text-muted-foreground">
                 <ShieldCheck className="h-5 w-5 text-primary" />
@@ -95,9 +91,7 @@ function Landing() {
               </div>
             </div>
             <div className="rounded-2xl border border-border bg-card p-6 font-mono text-sm shadow-sm">
-              <div className="mb-3 text-xs uppercase tracking-wide text-muted-foreground">
-                Example job
-              </div>
+              <div className="mb-3 text-xs uppercase tracking-wide text-muted-foreground">Example job</div>
               <pre className="whitespace-pre-wrap text-foreground">{`intent:
   "Merge Class A and Class B by
    Registration Number, flag rows
@@ -116,9 +110,9 @@ output: result.xlsx  (styles kept)`}</pre>
 
       <footer className="border-t border-border">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-6 py-8 text-sm text-muted-foreground md:flex-row md:items-center">
-          <div>© {new Date().getFullYear()} Ledgerly</div>
+          <div>© {new Date().getFullYear()} Productivity Buddy</div>
           <div className="flex items-center gap-1 font-serif text-base text-foreground">
-            <FileSpreadsheet className="h-4 w-4" /> Ledgerly
+            <FileSpreadsheet className="h-4 w-4" /> Productivity Buddy
           </div>
         </div>
       </footer>

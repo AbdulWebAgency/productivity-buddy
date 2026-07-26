@@ -77,7 +77,7 @@ function AuthPage() {
           <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
             <FileSpreadsheet className="h-4 w-4" />
           </span>
-          Ledgerly
+          Productivity Buddy
         </Link>
       </header>
       <main className="mx-auto flex max-w-md flex-col px-6 pt-8 pb-20">
@@ -87,9 +87,7 @@ function AuthPage() {
               {mode === "signin" ? "Welcome back" : "Create your workspace"}
             </CardTitle>
             <CardDescription>
-              {mode === "signin"
-                ? "Sign in to run Excel automations."
-                : "Free while in preview. No credit card."}
+              {mode === "signin" ? "Sign in to run Excel automations." : "Free while in preview. No credit card."}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -141,20 +139,14 @@ function AuthPage() {
               {mode === "signin" ? (
                 <>
                   New here?{" "}
-                  <button
-                    className="text-foreground underline underline-offset-4"
-                    onClick={() => setMode("signup")}
-                  >
+                  <button className="text-foreground underline underline-offset-4" onClick={() => setMode("signup")}>
                     Create an account
                   </button>
                 </>
               ) : (
                 <>
                   Already have an account?{" "}
-                  <button
-                    className="text-foreground underline underline-offset-4"
-                    onClick={() => setMode("signin")}
-                  >
+                  <button className="text-foreground underline underline-offset-4" onClick={() => setMode("signin")}>
                     Sign in
                   </button>
                 </>

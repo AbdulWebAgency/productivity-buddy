@@ -1,12 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  Outlet,
-  Link,
-  createRootRouteWithContext,
-  useRouter,
-  HeadContent,
-  Scripts,
-} from "@tanstack/react-router";
+import { Outlet, Link, createRootRouteWithContext, useRouter, HeadContent, Scripts } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
@@ -46,9 +39,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
-        <h1 className="text-xl font-semibold tracking-tight text-foreground">
-          This page didn't load
-        </h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">This page didn't load</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Something went wrong on our end. You can try refreshing or head back home.
         </p>
@@ -79,13 +70,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Ledgerly — Intelligent Excel automation for teams" },
+      { title: "Productivity Buddy — Intelligent Excel automation for teams" },
       {
         name: "description",
         content:
           "Merge, dedupe, diff and clean up Excel workbooks with AI-assisted planning. Preserves formatting, formulas and structure.",
       },
-      { property: "og:title", content: "Ledgerly — Intelligent Excel automation for teams" },
+      { property: "og:title", content: "Productivity Buddy — Intelligent Excel automation for teams" },
       {
         property: "og:description",
         content:
@@ -93,10 +84,22 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "Ledgerly — Intelligent Excel automation for teams" },
-      { name: "twitter:description", content: "Merge, dedupe, diff and clean up Excel workbooks with AI-assisted planning. Preserves formatting, formulas and structure." },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c6e10b40-e137-4093-9aa4-8f3169bcedc1/id-preview-5581b974--d0189fca-ec83-44ce-b3a1-7cb420fc2c43.lovable.app-1784399480405.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c6e10b40-e137-4093-9aa4-8f3169bcedc1/id-preview-5581b974--d0189fca-ec83-44ce-b3a1-7cb420fc2c43.lovable.app-1784399480405.png" },
+      { name: "twitter:title", content: "Productivity Buddy — Intelligent Excel automation for teams" },
+      {
+        name: "twitter:description",
+        content:
+          "Merge, dedupe, diff and clean up Excel workbooks with AI-assisted planning. Preserves formatting, formulas and structure.",
+      },
+      {
+        property: "og:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c6e10b40-e137-4093-9aa4-8f3169bcedc1/id-preview-5581b974--d0189fca-ec83-44ce-b3a1-7cb420fc2c43.lovable.app-1784399480405.png",
+      },
+      {
+        name: "twitter:image",
+        content:
+          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c6e10b40-e137-4093-9aa4-8f3169bcedc1/id-preview-5581b974--d0189fca-ec83-44ce-b3a1-7cb420fc2c43.lovable.app-1784399480405.png",
+      },
     ],
     links: [
       { rel: "stylesheet", href: appCss },

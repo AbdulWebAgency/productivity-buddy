@@ -776,7 +776,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
   // Merge/dedupe/highlight can preserve first-workbook styling by mutating a
   // copy of the first workbook. Diff/summary produce brand-new deliverables.
   const outWb = hasMutating ? workbooks[0] : new ExcelJS.Workbook();
-  outWb.creator = "Ledgerly";
+  outWb.creator = "Productivity Buddy";
   outWb.created = new Date();
 
   let currentGrid: SheetGrid = grids[0];

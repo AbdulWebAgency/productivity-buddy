@@ -35,14 +35,24 @@ function ProtectedLayout() {
             <span className="grid h-8 w-8 place-items-center rounded-md bg-primary text-primary-foreground">
               <FileSpreadsheet className="h-4 w-4" />
             </span>
-            Ledgerly
+            Productivity Buddy
           </Link>
           <nav className="flex items-center gap-1">
-            <Button asChild variant={pathname.startsWith("/app/workspaces") || pathname.startsWith("/app/w/") ? "secondary" : "ghost"} size="sm">
-              <Link to="/app/workspaces"><MessageSquare className="mr-2 h-4 w-4" />Workspaces</Link>
+            <Button
+              asChild
+              variant={pathname.startsWith("/app/workspaces") || pathname.startsWith("/app/w/") ? "secondary" : "ghost"}
+              size="sm"
+            >
+              <Link to="/app/workspaces">
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Workspaces
+              </Link>
             </Button>
             <Button asChild variant={pathname === "/app" ? "secondary" : "ghost"} size="sm">
-              <Link to="/app"><ListChecks className="mr-2 h-4 w-4" />Legacy jobs</Link>
+              <Link to="/app">
+                <ListChecks className="mr-2 h-4 w-4" />
+                Legacy jobs
+              </Link>
             </Button>
           </nav>
           <div className="flex items-center gap-3">

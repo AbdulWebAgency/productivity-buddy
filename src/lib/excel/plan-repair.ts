@@ -88,6 +88,26 @@ function normalizePlan(input: unknown, files: FileForAi[], repairs: string[]): L
   if (typeof plan.summary !== "string") plan.summary = "";
   if (!Array.isArray(plan.warnings)) plan.warnings = [];
   if (!Array.isArray(plan.columnMappings)) plan.columnMappings = [];
+
+  // Normalize projection: keep it iff it has at least one non-empty column.
+  if (isObj(plan.projection)) {
+    const rawCols = (plan.projection as LooseObj).columns;
+    if (Array.isArray(rawCols)) {
+      const cleaned = rawCols
+        .map((c) => (typeof c === "string" ? c.trim() : ""))
+        .filter((c) => c.length > 0);
+      if (cleaned.length > 0) {
+        plan.projection = { columns: cleaned };
+      } else {
+        delete plan.projection;
+        repairs.push("Dropped empty projection.columns");
+      }
+    } else {
+      delete plan.projection;
+    }
+  } else if (plan.projection !== undefined) {
+    delete plan.projection;
+  }
   return plan;
 }
 

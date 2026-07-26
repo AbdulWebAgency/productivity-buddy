@@ -63,6 +63,24 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
     }
 
   }
+  const projection = Array.isArray(stats.projection)
+    ? (stats.projection as Array<{ sheet: string; meta: { applied: boolean; resolved: string[]; unresolved: string[]; alwaysKept: string[] } }>)
+    : [];
+  if (projection.length > 0) {
+    const firstApplied = projection.find((e) => e.meta?.applied);
+    if (firstApplied) {
+      const cols = firstApplied.meta.resolved.join(", ");
+      const extra = firstApplied.meta.alwaysKept.length
+        ? ` (plus ${firstApplied.meta.alwaysKept.join(", ")})`
+        : "";
+      lines.push(`• Exported columns: ${cols}${extra}.`);
+    }
+    const skipped = new Set<string>();
+    projection.forEach((e) => e.meta?.unresolved?.forEach((u) => skipped.add(u)));
+    if (skipped.size > 0) {
+      lines.push(`• Columns not found: ${Array.from(skipped).join(", ")}.`);
+    }
+  }
   if (warnings.length) lines.push(`\nNotes: ${warnings.join("; ")}`);
   return lines.join("\n") || "Done.";
 }

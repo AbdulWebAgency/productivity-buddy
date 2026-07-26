@@ -180,7 +180,14 @@ When the user asks anything like "who's in X but missing from Y", "list students
 ## Choosing key columns
 - If a column is flagged as "likely key" in the catalog for BOTH files, use it.
 - Prefer registration numbers / IDs / emails over names — names collide.
-- Only ask the user to pick a key if there is genuine ambiguity. If they've already answered once in history, use that answer and don't re-ask.`;
+- Only ask the user to pick a key if there is genuine ambiguity. If they've already answered once in history, use that answer and don't re-ask.
+
+## Requested output columns
+If — and only if — the user explicitly asks for specific output columns (e.g. "give me only Name, Reg No and Email", "just show emails", "with columns X, Y"), add a top-level "projection" object to the plan:
+
+  "projection": { "columns": ["Name", "Reg No", "Email"] }
+
+Use the column names as the user wrote them; the engine fuzzy-matches per file. NEVER add projection when the user hasn't asked for specific columns — omitting it exports every column, which is the default.`;
 
 export type ConversationResult = {
   reply: string; // user-visible text (plan block stripped)

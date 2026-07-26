@@ -525,8 +525,9 @@ export function opMasterMerge(
       // Fill this file's columns
       for (let ti = 1; ti < headers.length; ti++) {
         const cm = columnMeta[ti];
-        if (!cm || cm.fileIdx !== fi) continue;
-        const srcIdx = g.headers.indexOf(cm.sourceHeader);
+        if (!cm || !cm.sources.some((s) => s.fileIdx === fi)) continue;
+        const src = cm.sources.find((s) => s.fileIdx === fi)!;
+        const srcIdx = g.headers.indexOf(src.sourceHeader);
         if (srcIdx < 0) continue;
         const newVal = r[srcIdx];
         const cur = entry.row[ti];

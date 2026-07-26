@@ -484,22 +484,29 @@ export function opMasterMerge(
   grids.forEach((g, fi) => {
     g.headers.forEach((h, ci) => {
       if (ci === keyIdxs[fi] || !h) return;
-      let name = h;
-      if (usedNames.has(name.toLowerCase())) name = `${h} (${shortName(fileNames[fi])})`;
-      let i = 2;
-      while (usedNames.has(name.toLowerCase())) name = `${h} (${shortName(fileNames[fi])} ${i++})`;
-      usedNames.add(name.toLowerCase());
-      headers.push(name);
-      columnMeta.push({
-        sources: [
-          {
-            fileIdx: fi,
-            sourceHeader: h,
-          },
-        ],
-      });
-    });
+ const existingIndex = headers.findIndex(
+  (x) => x.trim().toLowerCase() === h.trim().toLowerCase(),
+);
+
+if (existingIndex >= 0) {
+  columnMeta[existingIndex]!.sources.push({
+    fileIdx: fi,
+    sourceHeader: h,
   });
+} else {
+  usedNames.add(h.toLowerCase());
+
+  headers.push(h);
+
+  columnMeta.push({
+    sources: [
+      {
+        fileIdx: fi,
+        sourceHeader: h,
+      },
+    ],
+  });
+}
 
   const byKey = new Map<string, { row: CellValue[]; seenIn: Set<number>; dupCount: number }>();
   const keyOrder: string[] = [];

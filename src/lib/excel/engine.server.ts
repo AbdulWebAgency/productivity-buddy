@@ -507,6 +507,10 @@ if (existingIndex >= 0) {
     ],
   });
 }
+    });
+  });
+
+
 
   const byKey = new Map<string, { row: CellValue[]; seenIn: Set<number>; dupCount: number }>();
   const keyOrder: string[] = [];

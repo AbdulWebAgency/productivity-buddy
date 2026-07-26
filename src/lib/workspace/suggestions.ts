@@ -1,5 +1,6 @@
 // Deterministic action suggestions based on uploaded files + inspector.
 import type { InspectorReport } from "./inspector.server";
+import { normalizeHeader } from "@/lib/excel/engine/shared/headers";
 
 export type Suggestion = { label: string; prompt: string };
 
@@ -18,7 +19,7 @@ function firstKey(files: SuggestionInput["files"]): string | null {
 function sharedHeaders(files: SuggestionInput["files"]): string[] {
   if (files.length < 2) return [];
   const perFile = files.map((f) =>
-    new Set((f.inspector?.sheets[0]?.headers ?? []).map((h) => h.trim().toLowerCase())),
+    new Set((f.inspector?.sheets[0]?.headers ?? []).map(normalizeHeader)),
   );
   const base = perFile[0];
   const shared: string[] = [];

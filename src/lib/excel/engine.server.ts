@@ -851,6 +851,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
 
         if (d.missingInB.rows.length > 0) {
           writeGridToSheet(outWb, sheetOnlyInA, d.missingInB);
+
           producedSheets++;
         }
 

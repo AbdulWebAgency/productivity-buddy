@@ -32,7 +32,11 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
 // ---------- Deterministic greeting after upload ----------
 
 function norm(s: string): string {
-  return s.trim().toLowerCase().replace(/[._\-]+/g, " ").replace(/\s+/g, " ");
+  return s
+    .trim()
+    .toLowerCase()
+    .replace(/[._\-]+/g, " ")
+    .replace(/\s+/g, " ");
 }
 
 function keysSharedAcross(files: WorkspaceFileCtx[]): string[] {
@@ -55,8 +59,20 @@ function keysSharedAcross(files: WorkspaceFileCtx[]): string[] {
 }
 
 const KEY_HINTS = [
-  "registration", "reg no", "regno", "roll", "student id", "employee id",
-  "user id", "email", "phone", "mobile", "code", "id no", "id", "number",
+  "registration",
+  "reg no",
+  "regno",
+  "roll",
+  "student id",
+  "employee id",
+  "user id",
+  "email",
+  "phone",
+  "mobile",
+  "code",
+  "id no",
+  "id",
+  "number",
 ];
 
 function scoreKey(name: string): number {
@@ -79,8 +95,8 @@ export function buildInspectionGreeting(files: WorkspaceFileCtx[]): string {
   }
   const lines: string[] = [
     files.length === 1
-      ? "I've had a look at your file."
-      : `I've inspected your ${files.length} uploaded files.`,
+      ? "I've finished inspecting your file."
+      : `I've finished inspecting your ${files.length} uploaded files.`,
     "",
   ];
   for (const f of files) {
@@ -99,14 +115,10 @@ export function buildInspectionGreeting(files: WorkspaceFileCtx[]): string {
   const best = pickBestSharedKey(files);
   if (files.length >= 2 && best) {
     lines.push("");
-    lines.push(
-      `All ${files.length} files share **${best}** — that looks like the strongest key to match on.`,
-    );
+    lines.push(`✅ All ${files.length} files share **${best}**, so they're ready to be matched using that key.`);
     const others = shared.filter((s) => s !== best).slice(0, 3);
     if (others.length) {
-      lines.push(
-        `Other common columns: ${others.map((o) => `_${o}_`).join(", ")}.`,
-      );
+      lines.push(`I also found these shared columns: ${others.map((o) => `_${o}_`).join(", ")}.`);
     }
   } else if (files.length >= 2 && shared.length === 0) {
     lines.push("");
@@ -115,15 +127,17 @@ export function buildInspectionGreeting(files: WorkspaceFileCtx[]): string {
     );
   }
   // Warnings worth surfacing
-  const warns = files
-    .flatMap((f) => f.inspector?.warnings ?? [])
-    .slice(0, 3);
+  const warns = files.flatMap((f) => f.inspector?.warnings ?? []).slice(0, 3);
   if (warns.length) {
     lines.push("");
     lines.push(`Heads up: ${warns.join("; ")}.`);
   }
   lines.push("");
   lines.push("What would you like me to do?");
+  lines.push("");
+  lines.push(
+    "You can now ask me to create a master sheet, compare files, find missing records, remove duplicates, or perform a bulk lookup.",
+  );
   return lines.join("\n");
 }
 
@@ -210,9 +224,7 @@ function extractPlanBlock(text: string): { visible: string; json: string | null 
   const re = /```plan\s*([\s\S]*?)```/i;
   const m = text.match(re);
   if (!m) return { visible: text.trim(), json: null };
-  const visible = (text.slice(0, m.index) + text.slice((m.index ?? 0) + m[0].length))
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  const visible = (text.slice(0, m.index) + text.slice((m.index ?? 0) + m[0].length)).replace(/\n{3,}/g, "\n\n").trim();
   return { visible, json: m[1].trim() };
 }
 

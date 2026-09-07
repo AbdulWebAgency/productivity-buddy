@@ -336,8 +336,12 @@ function InspectorSummary({ inspector }: { inspector: unknown }) {
       blankRows: number;
       formulaCells: number;
       duplicateKeyValues: number;
+      worksheetType?: string;
+      confidence?: number;
+      likelyPrimaryTable?: boolean;
     }[];
     warnings?: string[];
+    primaryDataSheet?: string | null;
   } | null;
   if (!insp?.sheets?.length) {
     return <div className="text-[11px] text-muted-foreground">No inspection data.</div>;

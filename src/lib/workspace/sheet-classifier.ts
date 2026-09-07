@@ -56,7 +56,7 @@ function cellText(v: ExcelJS.CellValue): string {
   if (typeof v === "number" || typeof v === "boolean") return String(v);
   if (v instanceof Date) return v.toISOString();
   if (typeof v === "object") {
-    const o = v as Record<string, unknown>;
+    const o = v as unknown as Record<string, unknown>;
     if (typeof o.text === "string") return o.text;
     if (Array.isArray(o.richText)) return o.richText.map((r: { text?: string }) => r.text ?? "").join("");
     if ("result" in o) return cellText(o.result as ExcelJS.CellValue);

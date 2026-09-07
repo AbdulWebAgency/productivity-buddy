@@ -17,8 +17,13 @@ type InspectorSheet = {
   blankRows: number;
   formulaCells: number;
   duplicateKeyValues: number;
+  worksheetType?: string;
+  confidence?: number;
+  likelyPrimaryTable?: boolean;
+  rank?: number;
+  hidden?: boolean;
 };
-type InspectorReport = { sheets: InspectorSheet[]; warnings: string[] } | null;
+type InspectorReport = { sheets: InspectorSheet[]; warnings: string[]; primaryDataSheet?: string | null } | null;
 
 export type WorkspaceFileCtx = {
   index: number;
@@ -32,18 +37,24 @@ export type ChatTurn = { role: "user" | "assistant"; content: string };
 // ---------- Deterministic greeting after upload ----------
 
 import { normalizeHeader as norm, scoreKey } from "@/lib/excel/engine/shared/headers";
+import { primarySheetOf } from "./primary-sheet";
+
+// Always reason over the recommended data sheet, never a pivot/summary sheet.
+function mainSheet(f: WorkspaceFileCtx): InspectorSheet | undefined {
+  return primarySheetOf(f.inspector);
+}
 
 function keysSharedAcross(files: WorkspaceFileCtx[]): string[] {
   if (files.length === 0) return [];
   const perFile = files.map((f) => {
-    const sheet = f.inspector?.sheets?.[0];
+    const sheet = mainSheet(f);
     const headers = sheet?.headers ?? f.sheets[0]?.headers ?? [];
     return new Set(headers.map(norm));
   });
   const [first, ...rest] = perFile;
   if (!first) return [];
   const displayFor = new Map<string, string>();
-  const s0 = files[0].inspector?.sheets?.[0]?.headers ?? files[0].sheets[0]?.headers ?? [];
+  const s0 = mainSheet(files[0])?.headers ?? files[0].sheets[0]?.headers ?? [];
   s0.forEach((h) => displayFor.set(norm(h), h));
   const shared: string[] = [];
   for (const k of first) {
@@ -70,7 +81,7 @@ export function buildInspectionGreeting(files: WorkspaceFileCtx[]): string {
     "",
   ];
   for (const f of files) {
-    const sheet = f.inspector?.sheets?.[0];
+    const sheet = mainSheet(f);
     const rows = sheet?.rows ?? 0;
     const cols = sheet?.headers?.length ?? f.sheets[0]?.headers?.length ?? 0;
     const suffix =
@@ -79,7 +90,16 @@ export function buildInspectionGreeting(files: WorkspaceFileCtx[]): string {
         : cols > 0
           ? ` — ${cols} column${cols === 1 ? "" : "s"}`
           : "";
-    lines.push(`• **${f.name}**${suffix}`);
+    const sheetNote = sheet && (f.inspector?.sheets?.length ?? 0) > 1 ? ` (using sheet "${sheet.name}")` : "";
+    lines.push(`• **${f.name}**${suffix}${sheetNote}`);
+    const skipped = (f.inspector?.sheets ?? []).filter(
+      (s) => s.name !== sheet?.name && s.worksheetType && s.worksheetType !== "DATA" && s.worksheetType !== "UNKNOWN",
+    );
+    if (skipped.length) {
+      lines.push(
+        `  ↳ ignoring ${skipped.map((s) => `_${s.name}_ (${(s.worksheetType ?? "other").toLowerCase()})`).join(", ")}`,
+      );
+    }
   }
   const shared = keysSharedAcross(files);
   const best = pickBestSharedKey(files);
@@ -116,16 +136,24 @@ export function buildInspectionGreeting(files: WorkspaceFileCtx[]): string {
 function fileCatalog(files: WorkspaceFileCtx[]): string {
   return files
     .map((f) => {
-      const insp = f.inspector?.sheets?.[0];
+      const insp = mainSheet(f);
       const rows = insp?.rows ?? 0;
       const headers = (insp?.headers ?? f.sheets[0]?.headers ?? []).slice(0, 40);
       const keys = insp?.likelyKeys?.slice(0, 3) ?? [];
       const dupes = insp?.duplicateKeyValues ?? 0;
+      const all = f.inspector?.sheets ?? [];
+      const others = all
+        .filter((s) => s.name !== insp?.name)
+        .map((s) => `${s.name} [${s.worksheetType ?? "UNKNOWN"}${s.confidence != null ? ` ${s.confidence}%` : ""}]`);
       return [
         `#${f.index} "${f.name}" — ${rows} rows`,
+        insp
+          ? `  primary data sheet: "${insp.name}" [${insp.worksheetType ?? "DATA"}${insp.confidence != null ? ` ${insp.confidence}%` : ""}]`
+          : null,
         `  columns: ${headers.join(" | ")}`,
         keys.length ? `  likely keys: ${keys.join(", ")}` : null,
         dupes > 0 ? `  ⚠ ${dupes} duplicate values in ${keys[0] ?? "key"}` : null,
+        others.length ? `  other worksheets (do NOT use for merge/compare): ${others.join(", ")}` : null,
       ]
         .filter(Boolean)
         .join("\n");
@@ -176,6 +204,9 @@ Rules:
 
 ## Choosing the right op for "missing / present / compare / not in" requests
 When the user asks anything like "who's in X but missing from Y", "list students present in allocation but not in main", "find the difference", "what's missing", "compare these two" — ALWAYS use \`diff\` (not merge, not intersection). The diff op ALWAYS produces two sheets so both directions are visible: "Only in <fileA>" and "Only in <fileB>". Pick fileAIndex/fileBIndex from the catalog #numbers; don't stress about the order — both sides are reported. In your reply, name the sheet the user is looking for by its real name ("Only in <filename>"). If the user says "add missing rows into X", follow the diff with a \`master_merge\` using joinType "outer" (or "left" if they only want to enrich X).
+
+## Worksheets
+Each file's catalog entry names its **primary data sheet** plus any other worksheets with a classification (DATA, PIVOT, SUMMARY, DOCUMENTATION, EMPTY, UNKNOWN) and a confidence score. Reason only over DATA worksheets — the columns listed in the catalog come from the primary data sheet. Never use a PIVOT, SUMMARY or DOCUMENTATION worksheet for merge, compare, intersection or missing-record work. You may mention those sheets when relevant (e.g. explaining that you skipped them), and if the user explicitly names a different worksheet, say which one you'll use.
 
 ## Choosing key columns
 - If a column is flagged as "likely key" in the catalog for BOTH files, use it.

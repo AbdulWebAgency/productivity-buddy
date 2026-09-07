@@ -1,6 +1,7 @@
 // Deterministic action suggestions based on uploaded files + inspector.
 import type { InspectorReport } from "./inspector.server";
 import { normalizeHeader } from "@/lib/excel/engine/shared/headers";
+import { primarySheetOf } from "./primary-sheet";
 
 export type Suggestion = { label: string; prompt: string };
 
@@ -10,7 +11,7 @@ export type SuggestionInput = {
 
 function firstKey(files: SuggestionInput["files"]): string | null {
   for (const f of files) {
-    const k = f.inspector?.sheets[0]?.likelyKeys[0];
+    const k = primarySheetOf(f.inspector)?.likelyKeys[0];
     if (k) return k;
   }
   return null;
@@ -19,7 +20,7 @@ function firstKey(files: SuggestionInput["files"]): string | null {
 function sharedHeaders(files: SuggestionInput["files"]): string[] {
   if (files.length < 2) return [];
   const perFile = files.map((f) =>
-    new Set((f.inspector?.sheets[0]?.headers ?? []).map(normalizeHeader)),
+    new Set((primarySheetOf(f.inspector)?.headers ?? []).map(normalizeHeader)),
   );
   const base = perFile[0];
   const shared: string[] = [];
@@ -57,7 +58,7 @@ export function suggestActions(input: SuggestionInput): Suggestion[] {
     });
   }
 
-  if (input.files.some((f) => (f.inspector?.sheets[0]?.duplicateKeyValues ?? 0) > 0)) {
+  if (input.files.some((f) => (primarySheetOf(f.inspector)?.duplicateKeyValues ?? 0) > 0)) {
     out.push({
       label: `Remove duplicate rows`,
       prompt: `Remove duplicate rows${key ? ` based on ${key}` : ""}.`,
@@ -67,7 +68,7 @@ export function suggestActions(input: SuggestionInput): Suggestion[] {
     label: `Generate a summary sheet`,
     prompt: `Add a summary sheet describing the data (row counts, numeric column stats).`,
   });
-  if (input.files[0]?.inspector?.sheets[0]?.blankRows) {
+  if (primarySheetOf(input.files[0]?.inspector)?.blankRows) {
     out.push({
       label: `Clean up blank rows`,
       prompt: `Remove blank rows from the workbook.`,

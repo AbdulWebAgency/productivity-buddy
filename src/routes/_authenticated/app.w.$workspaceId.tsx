@@ -350,7 +350,17 @@ function InspectorSummary({ inspector }: { inspector: unknown }) {
     <div className="space-y-2 text-[11px]">
       {insp.sheets.map((s) => (
         <div key={s.name} className="rounded bg-muted/40 p-2">
-          <div className="font-medium">{s.name}</div>
+          <div className="flex items-center gap-1.5">
+            <span className="font-medium">{s.name}</span>
+            {s.worksheetType && s.worksheetType !== "DATA" && (
+              <span className="rounded bg-muted px-1 text-[10px] uppercase text-muted-foreground">
+                {s.worksheetType.toLowerCase()}
+              </span>
+            )}
+            {(s.likelyPrimaryTable || insp.primaryDataSheet === s.name) && (
+              <span className="rounded bg-primary/10 px-1 text-[10px] text-primary">main data</span>
+            )}
+          </div>
           <div className="text-muted-foreground">
             {s.rows} rows · {s.columns} cols
             {s.blankRows > 0 && ` · ${s.blankRows} blank`}

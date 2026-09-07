@@ -116,8 +116,10 @@ export function classifySheet(ws: ExcelJS.Worksheet): SheetClassification {
 
   const containsPivotIndicators = pivotHits > 0;
 
+  const docNameHit = DOC_LABELS.some((p) => ws.name.toLowerCase().includes(p));
+
   // EMPTY
-  if (stats.length === 0 || totalFilled < 3) {
+  if (stats.length === 0 || (totalFilled < 3 && !docNameHit)) {
     return {
       worksheetType: "EMPTY",
       confidence: 95,
@@ -168,7 +170,6 @@ export function classifySheet(ws: ExcelJS.Worksheet): SheetClassification {
   }
 
   // DOCUMENTATION
-  const docNameHit = DOC_LABELS.some((p) => ws.name.toLowerCase().includes(p));
   if (docNameHit || longTextCells >= 3 || (modalWidth <= 2 && stats.length <= 30 && docHits > 0)) {
     reasons.push(docNameHit ? "sheet name looks like documentation" : "long free-text content, narrow layout");
     return {

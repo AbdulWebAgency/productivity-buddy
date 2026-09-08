@@ -2,6 +2,7 @@
 import ExcelJS from "exceljs";
 import type { SheetMeta } from "../../types";
 import { HIGHLIGHT_UNMATCHED, autoWidth, styleHeader } from "./styling";
+import { detectHeaderRow } from "@/lib/excel/header-detection";
 
 export type CellValue = string | number | boolean | null;
 export type SheetGrid = { headers: string[]; rows: CellValue[][] };
@@ -54,13 +55,14 @@ export function extractSheetMeta(wb: ExcelJS.Workbook): SheetMeta {
 
 export function sheetToGrid(ws: ExcelJS.Worksheet): SheetGrid {
   const headers: string[] = [];
-  const first = ws.getRow(1);
+  const headerRow = detectHeaderRow(ws);
+  const first = ws.getRow(headerRow);
   const maxCol = ws.columnCount;
   for (let c = 1; c <= maxCol; c++) {
     headers.push(String(first.getCell(c).value ?? "").trim());
   }
   const rows: CellValue[][] = [];
-  for (let r = 2; r <= ws.rowCount; r++) {
+  for (let r = headerRow + 1; r <= ws.rowCount; r++) {
     const row = ws.getRow(r);
     const out: CellValue[] = [];
     let any = false;

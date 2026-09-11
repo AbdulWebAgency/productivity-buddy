@@ -2,7 +2,7 @@ import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { writeGridToSheet } from "../shared/workbook";
-import { registerOp, applyProjection } from "../registry";
+import { applyProjection, type OpHandler } from "../registry";
 
 export function opIntersection(
   a: SheetGrid,
@@ -37,7 +37,7 @@ export function opIntersection(
   };
 }
 
-registerOp<Extract<PlanOp, { op: "intersection" }>>("intersection", (op, ctx) => {
+export const intersectionHandler: OpHandler<Extract<PlanOp, { op: "intersection" }>> = (op, ctx) => {
   const aIdx = op.fileAIndex;
   const bIdx = op.fileBIndex;
   const a = ctx.grids[aIdx];
@@ -69,4 +69,4 @@ registerOp<Extract<PlanOp, { op: "intersection" }>>("intersection", (op, ctx) =>
     ...inter.stats,
     sheet: sheetName,
   });
-});
+};

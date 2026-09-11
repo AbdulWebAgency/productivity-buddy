@@ -1,94 +1,74 @@
-# Sprint 3.0 — Architecture Refactor Plan
+# Inspection: resolveColumn callers and key selection
 
-Goal: improve internal structure of the Excel engine and planner without changing any behaviour, prompts, UI, or data.
+No files changed. Findings below, plus a recommendation for a separate key resolver.
 
-## Current state (measured)
+## 1. Callers of resolveColumn
 
-- `src/lib/excel/engine.server.ts` — **1,069 lines**. Contains 8 op implementations (`opMerge`, `opDedupe`, `opDiff`, `opIntersection`, `opSummary`, `opMasterMerge`, `opBulkLookup`, `recalcFormulas`), workbook I/O (`readWorkbook`, `extractSheetMeta`, `sheetToGrid`, `writeGridToSheet`), styling helpers (`styleHeader`, `autoWidth`), header matching (`findColumnIndex`), and the `runPlan` orchestrator.
-- Header normalization is duplicated in **4 files** with slightly different rules:
-  - `engine.server.ts::findColumnIndex` — fuzzy resolver (normalize + substring + token subset)
-  - `deterministic-plan.ts::norm` — planner-side normalization
-  - `inspector.server.ts::norm` — inspector normalization
-  - `suggestions.ts` — inline `.trim().toLowerCase()` for shared-header detection
-- Op dispatch happens as a `switch` inside `runPlan`; `types.ts` defines the Zod discriminated union; `plan-repair.ts` has its own op-name allowlist; `friendly-errors.ts` has a per-op summarizer. Adding an op today requires touching 4–5 unrelated files.
+All import from `src/lib/excel/engine/shared/headers.ts`.
 
-## Target structure
+| Caller | Line | Input | Expectation |
+| --- | --- | --- | --- |
+| `ops/diff.ts` | 31-32 | plan `keyColumn` vs each file's headers | exactly one correct key column per side; throws if -1 |
+| `ops/intersection.ts` | 14-15 | plan `keyColumn` vs A and B | same; throws if -1 |
+| `ops/merge.ts` | 18 | `keyColumn` per grid | per-file key index; -1 tolerated (row falls back) |
+| `ops/masterMerge.ts` | 20 | `keyColumn` per grid | key index per file for the join |
+| `ops/dedupe.ts` | 13 | optional `keyColumn` | -1 silently degrades to full-row dedupe |
+| `ops/highlight.ts` | 72 | display column name | index of a column to style; cosmetic |
+| `shared/projection.ts` | 79, 93 | user-requested output column names, plus `alwaysKeep` | best-effort display-column match; -1 recorded as unresolved |
+| `deterministic-plan.ts` | 77 | projection candidates vs union of headers | boolean "does any candidate look like a real column" gate |
 
-```text
-src/lib/excel/
-  engine.server.ts         # thin: re-exports runPlan + public API only
-  engine/
-    runPlan.ts             # orchestrator; iterates registry
-    registry.ts            # OperationRegistry: id -> { schema, run, summarize? }
-    ops/
-      diff.ts
-      merge.ts
-      intersection.ts
-      masterMerge.ts
-      bulkLookup.ts
-      summary.ts
-      dedupe.ts
-      highlight.ts         # highlight_column + recalc live here
-    shared/
-      headers.ts           # canonical normalize() + resolveColumn() + scoreKey()
-      workbook.ts          # readWorkbook, sheetToGrid, writeGridToSheet, extractSheetMeta, safeSheetName
-      styling.ts           # styleHeader, autoWidth
-  header-detection.ts      # unchanged (row-scan heuristic)
-  deterministic-plan.ts    # switches to shared/headers
-  intent.ts                # unchanged
-  plan-repair.ts           # unchanged for now (op list stays in types.ts)
-  types.ts                 # unchanged public shape
-```
+Two distinct expectations are being served by one function:
+- **Key resolution** (diff, intersection, merge, masterMerge, dedupe): must be exact and identity-preserving; a wrong match silently produces wrong joins.
+- **Display/projection resolution** (projection, highlight, planner gate): loose matching is desirable and failures are harmless.
 
-`src/lib/workspace/inspector.server.ts` and `suggestions.ts` also switch to `engine/shared/headers.ts`.
+## 2. Is the current fuzzy matching safe?
 
-## Operation Registry shape
+`resolveColumn` tries, in order: exact normalized equality, substring in either direction, then token-subset. Safe for projection/highlight. Not safe as a key resolver:
+
+- **Substring either direction is over-permissive.** Target `"id"` matches `"Candidate ID"`, `"Grid Ref"`, `"Valid Until"` — whichever comes first in header order. `"name"` matches `"Filename"`, `"Surname"`.
+- **First-match wins, no scoring.** With `"Student ID"` and `"Student ID (old)"` present, the answer depends on column order, not similarity. There is no ambiguity signal to the caller.
+- **Token-subset ignores extra tokens.** Target `"reg no"` matches `"Reg No Verified Flag"`.
+- **Asymmetric across files.** diff/intersection/merge resolve the same key name independently per file, so file A can land on `Student ID` and file B on `Old Student ID` with no cross-check. This is the highest-severity risk: the operation succeeds and returns plausible but wrong rows.
+- **No type/uniqueness check.** A column resolved as a key is never verified against the inspector's uniqueness data.
+
+## 3. Correctness risks in the current key selection
+
+`commonColumns` / `pickBestKey` / `scoreKey` in `deterministic-plan.ts`:
+
+- `commonColumns` uses strict normalized equality only, while the engine resolves fuzzily. So the planner can decide "no shared columns → ask the user", then the engine happily fuzzy-matches something. Planner and engine disagree about what a match is.
+- `scoreKey` scores by longest KEY_HINTS substring, so `"id"` (2) loses to `"number"` (6) — `"Invoice Number"` beats `"Student ID"`. Hint length is a poor proxy for key quality.
+- Score ties return `key: null` and force a clarification even when uniqueness data would settle it immediately.
+- `pickBestKey` returns a user-supplied `preferredKey` verbatim even when it matches no header at all; the failure then surfaces from deep inside the op as a thrown error rather than as a clarification.
+- Key choice ignores everything the inspector already computed (`likelyKeys`, uniqueness, duplicate counts, primary sheet), so the planner is strictly less informed than the inspection layer.
+- Keys compare via `String(...).trim().toLowerCase()` in the ops. Numeric IDs read as `1001` vs text `"1001"` still match, but `1001.0` or Excel-formatted values do not — no normalization of numeric/date key values.
+
+## 4. Recommendation: a separate `resolveKeyColumn`
+
+Warranted. The two use cases have opposite failure preferences: projection should guess, keys should refuse.
+
+**Where it sits:** a new module `src/lib/excel/engine/shared/key-resolution.ts`, next to `headers.ts`, depending on it. `headers.ts` keeps `normalizeHeader`, `scoreKey`, `resolveColumn` unchanged so projection/highlight/planner-gate behaviour is untouched.
+
+Proposed shape:
 
 ```ts
-// engine/registry.ts
-export type OpRunCtx = { files: EngineFile[]; wb: ExcelJS.Workbook; result: EngineResult };
-export type OpHandler<Op extends PlanOp = PlanOp> = (op: Op, ctx: OpRunCtx) => Promise<void> | void;
-export interface OperationDef<Op extends PlanOp = PlanOp> {
-  id: Op["op"];
-  run: OpHandler<Op>;
-}
-export const operationRegistry = new Map<PlanOp["op"], OperationDef>();
-export function registerOp<Op extends PlanOp>(def: OperationDef<Op>): void;
+type KeyResolution =
+  | { status: "resolved"; index: number; header: string; confidence: number }
+  | { status: "ambiguous"; candidates: { index: number; header: string; score: number }[] }
+  | { status: "not_found" };
+
+resolveKeyColumn(headers: string[], name: string): KeyResolution
 ```
 
-Each `ops/*.ts` file self-registers on import; `runPlan.ts` imports the barrel `ops/index.ts` once, then dispatches `operationRegistry.get(op.op).run(op, ctx)`. Op schemas continue to live in `types.ts` — moving them would risk changing the discriminated union type surface and breaking plan-repair. This keeps the registry a pure runtime concern.
+Rules: exact normalized match wins outright; otherwise score all headers (token overlap ratio, penalise extra tokens, require full-token containment rather than raw substring) and return `ambiguous` when the top two are close, instead of picking one. Never return a bare index.
 
-## Unified header utility (`engine/shared/headers.ts`)
+**Adoption points**, in order:
+1. `ops/diff.ts`, `ops/intersection.ts` — replace both `resolveColumn` calls; also add a cross-file agreement check so A and B must land on equivalent headers before the op runs.
+2. `ops/merge.ts`, `ops/masterMerge.ts` — same per-grid resolution, with per-file resolution reported in the op log.
+3. `ops/dedupe.ts` — resolve, and on `ambiguous`/`not_found` warn rather than silently switching to full-row dedupe.
+4. `deterministic-plan.ts` — `commonColumns` uses the same resolver so planner and engine agree; `pickBestKey` consults inspector uniqueness before falling back to `scoreKey`, and validates `preferredKey` against real headers before returning it.
 
-Single source of truth exposing:
-- `normalizeHeader(s: string): string` — the current `norm()` (trim, lowercase, collapse `._-`, collapse whitespace). Replaces the 4 duplicates.
-- `resolveColumn(headers: string[], name: string): number` — current `findColumnIndex` (exact → normalized → substring → token-subset).
-- `scoreKey(header: string): number` — current planner + inspector heuristic (KEY_HINTS-based).
-- `KEY_HINTS` — the one shared array.
+Projection, highlight and the planner's projection gate keep using `resolveColumn`.
 
-Behaviour is preserved by taking the existing implementations verbatim; no algorithmic change.
+## Suggested first step
 
-## Risks & mitigations
-
-- **Risk: engine barrel splitting can accidentally drop a helper referenced across ops.** Mitigation: move file-by-file, keep `engine.server.ts` re-exporting the same public symbols so no importer changes, run typecheck after each move.
-- **Risk: header hint list changes ranking behaviour.** Mitigation: use `deterministic-plan.ts`'s KEY_HINTS (longer list) as canonical; inspector's shorter list is a strict subset — verified.
-- **Risk: self-registering ops rely on import side effects; tree-shaking or SSR-only import order could drop one.** Mitigation: single explicit barrel `ops/index.ts` imported by `runPlan.ts` (side-effect import), listed statically.
-- **Risk: `.server.ts` filename guard.** Files under `engine/` that touch ExcelJS must keep the `.server.ts` suffix or live under an already-guarded path. Plan: name each op file `diff.ts` etc. but keep the whole `engine/` folder imported only from `engine.server.ts` (which is already server-only), so the import-protection chain is preserved.
-- **Risk: circular imports between registry and ops.** Mitigation: `registry.ts` holds only the Map + `registerOp`; ops import types from `types.ts` and helpers from `shared/*`, never from `runPlan.ts`.
-
-## Execution order (small, verifiable steps)
-
-1. **Create `engine/shared/`** — extract `workbook.ts`, `styling.ts`, `headers.ts` from `engine.server.ts`. Replace originals with re-exports. Typecheck.
-2. **Point planner/inspector/suggestions at `shared/headers.ts`** — delete their local `norm`/KEY_HINTS. Typecheck.
-3. **Introduce `engine/registry.ts` + `engine/runPlan.ts`** — move current `runPlan` body in, but keep the `switch` temporarily. Re-export from `engine.server.ts`. Typecheck.
-4. **Extract ops one at a time** in this order (safest → riskiest): `dedupe`, `summary`, `intersection`, `diff`, `merge`, `bulkLookup`, `masterMerge`, `highlight` (+ `recalc`). After each: register the op, delete its `switch` arm, typecheck.
-5. **Delete the switch** once every op is registered; `runPlan` becomes a pure registry loop.
-6. **Final pass**: shrink `engine.server.ts` to a re-export shim so all existing imports (`@/lib/excel/engine.server`) keep resolving unchanged.
-
-Verification after every step: `tsgo` typecheck + a manual smoke of upload → diff → download in the preview to confirm identical output.
-
-## Out of scope (explicitly)
-
-- No prompt changes, no UI changes, no schema/migration changes, no new ops, no perf work, no test additions. `plan-repair.ts` and `intent.ts` are left alone.
-
-Awaiting approval before step 1.
+Introduce `key-resolution.ts` with unit tests over adversarial header sets (`Student ID` / `Old Student ID`, `Name` / `Filename`, `Reg No` / `Reg No Verified`), then adopt in diff and intersection only, verifying against a real workspace run before touching merge/master_merge.

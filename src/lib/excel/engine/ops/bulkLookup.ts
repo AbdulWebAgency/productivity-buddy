@@ -1,7 +1,7 @@
 import type { PlanOp } from "../../types";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { writeGridToSheet } from "../shared/workbook";
-import { registerOp, applyProjection } from "../registry";
+import { applyProjection, type OpHandler } from "../registry";
 
 const KEYISH_HINTS = ["id", "reg", "roll", "email", "mail", "phone", "mobile", "name", "code", "number"];
 
@@ -64,7 +64,7 @@ export function opBulkLookup(
   };
 }
 
-registerOp<Extract<PlanOp, { op: "bulk_lookup" }>>("bulk_lookup", (op, ctx) => {
+export const bulkLookupHandler: OpHandler<Extract<PlanOp, { op: "bulk_lookup" }>> = (op, ctx) => {
   const targetGrid = ctx.grids[op.fileIndex];
   if (!targetGrid) {
     ctx.warnings.push(`bulk_lookup skipped: fileIndex ${op.fileIndex} out of range`);
@@ -86,4 +86,4 @@ registerOp<Extract<PlanOp, { op: "bulk_lookup" }>>("bulk_lookup", (op, ctx) => {
     file: ctx.files[op.fileIndex]?.name,
     ...r.stats,
   });
-});
+};

@@ -2,7 +2,7 @@ import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { safeSheetName, writeGridToSheet } from "../shared/workbook";
-import { registerOp, applyProjection } from "../registry";
+import { applyProjection, type OpHandler } from "../registry";
 
 export type DiffResult = {
   missingInA: SheetGrid; // rows present in B but not A (add to A)
@@ -102,7 +102,7 @@ export function opDiff(
   };
 }
 
-registerOp<Extract<PlanOp, { op: "diff" }>>("diff", (op, ctx) => {
+export const diffHandler: OpHandler<Extract<PlanOp, { op: "diff" }>> = (op, ctx) => {
   const aIdx = op.fileAIndex;
   const bIdx = op.fileBIndex;
   const a = ctx.grids[aIdx];
@@ -160,4 +160,4 @@ registerOp<Extract<PlanOp, { op: "diff" }>>("diff", (op, ctx) => {
     onlyInB: d.stats.missingInA,
     sheets: [sheetOnlyInB, sheetOnlyInA, ...(d.changed.rows.length ? ["Changed rows"] : [])],
   });
-});
+};

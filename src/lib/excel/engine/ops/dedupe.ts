@@ -1,7 +1,7 @@
 import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
-import { registerOp } from "../registry";
+import type { OpHandler } from "../registry";
 
 export function opDedupe(
   grid: SheetGrid,
@@ -26,7 +26,7 @@ export function opDedupe(
   return { grid: { headers: grid.headers, rows: kept }, removed };
 }
 
-registerOp<Extract<PlanOp, { op: "dedupe" }>>("dedupe", (op, ctx) => {
+export const dedupeHandler: OpHandler<Extract<PlanOp, { op: "dedupe" }>> = (op, ctx) => {
   const { grid: dg, removed } = opDedupe(ctx.state.currentGrid, op);
   const rowsIn = ctx.state.currentGrid.rows.length + removed - dg.rows.length + dg.rows.length;
   // rowsIn = original count; preserve original log semantics
@@ -43,4 +43,4 @@ registerOp<Extract<PlanOp, { op: "dedupe" }>>("dedupe", (op, ctx) => {
     duplicatesRemoved: removed,
   });
   void rowsIn;
-});
+};

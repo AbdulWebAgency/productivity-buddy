@@ -5,7 +5,7 @@ import { HyperFormula } from "hyperformula";
 import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import { cellToValue } from "../shared/workbook";
-import { registerOp } from "../registry";
+import type { OpHandler } from "../registry";
 
 /** Recalc formulas via HyperFormula. Preserves originals when unsupported. */
 export function recalcFormulas(wb: ExcelJS.Workbook): { recalculated: number; skipped: number } {
@@ -68,7 +68,7 @@ export function recalcFormulas(wb: ExcelJS.Workbook): { recalculated: number; sk
   return { recalculated, skipped };
 }
 
-registerOp<Extract<PlanOp, { op: "highlight_column" }>>("highlight_column", (op, ctx) => {
+export const highlightColumnHandler: OpHandler<Extract<PlanOp, { op: "highlight_column" }>> = (op, ctx) => {
   const idx = resolveColumn(ctx.state.currentGrid.headers, op.column);
   if (idx < 0) {
     ctx.warnings.push(`highlight_column skipped: column "${op.column}" not found`);
@@ -114,9 +114,9 @@ registerOp<Extract<PlanOp, { op: "highlight_column" }>>("highlight_column", (op,
     rule: op.rule,
     matches: highlightRows.size,
   });
-});
+};
 
-registerOp<Extract<PlanOp, { op: "recalc" }>>("recalc", (_op, ctx) => {
+export const recalcHandler: OpHandler<Extract<PlanOp, { op: "recalc" }>> = (_op, ctx) => {
   const r = recalcFormulas(ctx.outWb);
   ctx.opLogs.push({ op: "recalc", status: "ok", ms: Date.now() - ctx.started, ...r });
-});
+};

@@ -1,7 +1,7 @@
 import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
-import { registerOp } from "../registry";
+import type { OpHandler } from "../registry";
 
 export function opMerge(
   grids: SheetGrid[],
@@ -87,7 +87,7 @@ export function opMerge(
   };
 }
 
-registerOp<Extract<PlanOp, { op: "merge" }>>("merge", (op, ctx) => {
+export const mergeHandler: OpHandler<Extract<PlanOp, { op: "merge" }>> = (op, ctx) => {
   if (ctx.grids.length < 2) {
     ctx.warnings.push("merge skipped: needs ≥2 files");
     ctx.opLogs.push({ op: "merge", status: "skipped", reason: "needs ≥2 files" });
@@ -107,4 +107,4 @@ registerOp<Extract<PlanOp, { op: "merge" }>>("merge", (op, ctx) => {
     keyColumn: op.keyColumn,
     ...merged.stats,
   });
-});
+};

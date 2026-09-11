@@ -1,7 +1,7 @@
 import type { PlanOp } from "../../types";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { writeGridToSheet } from "../shared/workbook";
-import { registerOp } from "../registry";
+import type { OpHandler } from "../registry";
 
 export function opSummary(grid: SheetGrid): { headers: string[]; rows: CellValue[][] } {
   const rows: CellValue[][] = [
@@ -22,7 +22,7 @@ export function opSummary(grid: SheetGrid): { headers: string[]; rows: CellValue
   return { headers: rows[0].map(String), rows: rows.slice(1) };
 }
 
-registerOp<Extract<PlanOp, { op: "summary" }>>("summary", (_op, ctx) => {
+export const summaryHandler: OpHandler<Extract<PlanOp, { op: "summary" }>> = (_op, ctx) => {
   const s = opSummary(ctx.state.currentGrid);
   writeGridToSheet(ctx.outWb, "Summary", s);
   ctx.state.producedSheets++;
@@ -33,4 +33,4 @@ registerOp<Extract<PlanOp, { op: "summary" }>>("summary", (_op, ctx) => {
     metrics: s.rows.length,
     sheet: "Summary",
   });
-});
+};

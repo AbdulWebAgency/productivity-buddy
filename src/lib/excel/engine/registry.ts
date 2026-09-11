@@ -32,15 +32,9 @@ export type OpCtx = {
 
 export type OpHandler<Op extends PlanOp = PlanOp> = (op: Op, ctx: OpCtx) => void | Promise<void>;
 
-const registry = new Map<PlanOp["op"], OpHandler>();
-
-export function registerOp<Op extends PlanOp>(id: Op["op"], handler: OpHandler<Op>): void {
-  registry.set(id, handler as OpHandler);
-}
-
-export function getOpHandler(id: PlanOp["op"]): OpHandler | undefined {
-  return registry.get(id);
-}
+// NOTE: handler lookup lives in ./ops/index.ts as an explicit static table.
+// There is deliberately no mutable runtime registry here — self-registration
+// via module side effects is not bundler-safe.
 
 /**
  * Context-aware wrapper around `projectGrid`. Ops call this before writing a

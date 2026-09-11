@@ -2,7 +2,7 @@ import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { safeSheetName, writeGridToSheet } from "../shared/workbook";
-import { registerOp, applyProjection } from "../registry";
+import { applyProjection, type OpHandler } from "../registry";
 
 export type MasterMergeResult = {
   master: SheetGrid;
@@ -177,7 +177,7 @@ export function opMasterMerge(
   };
 }
 
-registerOp<Extract<PlanOp, { op: "master_merge" }>>("master_merge", (op, ctx) => {
+export const masterMergeHandler: OpHandler<Extract<PlanOp, { op: "master_merge" }>> = (op, ctx) => {
   if (ctx.grids.length < 2) {
     ctx.warnings.push("master_merge skipped: needs ≥2 files");
     ctx.opLogs.push({ op: "master_merge", status: "skipped", reason: "needs ≥2 files" });
@@ -210,4 +210,4 @@ registerOp<Extract<PlanOp, { op: "master_merge" }>>("master_merge", (op, ctx) =>
     keyColumn: op.keyColumn,
     ...m.stats,
   });
-});
+};

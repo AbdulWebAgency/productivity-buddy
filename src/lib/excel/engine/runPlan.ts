@@ -5,9 +5,9 @@ import type { Plan, PlanOp } from "../types";
 import type { EngineFile, EngineResult } from "./types";
 import { readWorkbook, sheetToGrid, writeGridToSheet } from "./shared/workbook";
 import type { CellValue } from "./shared/workbook";
-import { applyProjection, getOpHandler, type EngineState, type OpCtx } from "./registry";
+import { applyProjection, type EngineState, type OpCtx } from "./registry";
 import { recalcFormulas } from "./ops/highlight";
-import "./ops"; // side-effect: register all ops
+import { getOpHandler } from "./ops";
 
 export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineResult> {
   const warnings: string[] = [...plan.warnings];

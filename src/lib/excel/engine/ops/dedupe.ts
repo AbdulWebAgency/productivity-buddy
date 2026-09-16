@@ -36,11 +36,12 @@ export function opDedupe(
     seen.add(key);
     kept.push(r);
   }
-  return { grid: { headers: grid.headers, rows: kept }, removed };
+  return { grid: { headers: grid.headers, rows: kept }, removed, keyWarning };
 }
 
 export const dedupeHandler: OpHandler<Extract<PlanOp, { op: "dedupe" }>> = (op, ctx) => {
-  const { grid: dg, removed } = opDedupe(ctx.state.currentGrid, op);
+  const { grid: dg, removed, keyWarning } = opDedupe(ctx.state.currentGrid, op);
+  if (keyWarning) ctx.warnings.push(keyWarning);
   const rowsIn = ctx.state.currentGrid.rows.length + removed - dg.rows.length + dg.rows.length;
   // rowsIn = original count; preserve original log semantics
   const originalCount = ctx.state.currentGrid.rows.length;

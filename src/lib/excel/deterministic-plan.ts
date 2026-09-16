@@ -122,22 +122,27 @@ function extractProjection(
   return { columns: cleaned };
 }
 
+// Shared columns are detected with the SAME resolver the engine uses for key
+// columns, so the planner never asks for clarification on a pair the engine
+// would happily match (and never proposes a key the engine would reject).
 function commonColumns(files: FileForAi[]): { display: string; perFile: string[] }[] {
   if (files.length === 0) return [];
-  const perFileMaps = files.map((f) => {
-    const m = new Map<string, string>();
-    fileHeaders(f).forEach((h) => m.set(norm(h), h));
-    return m;
-  });
-  const base = perFileMaps[0];
+  const headerSets = files.map((f) => fileHeaders(f));
   const out: { display: string; perFile: string[] }[] = [];
-  for (const [k, display] of base) {
+  const seen = new Set<string>();
+  for (const display of headerSets[0]) {
+    const k = norm(display);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
     const perFile: string[] = [display];
     let all = true;
-    for (let i = 1; i < perFileMaps.length; i++) {
-      const hit = perFileMaps[i].get(k);
-      if (!hit) { all = false; break; }
-      perFile.push(hit);
+    for (let i = 1; i < headerSets.length; i++) {
+      const r = resolveKeyColumn(headerSets[i], display);
+      if (r.status !== "resolved") {
+        all = false;
+        break;
+      }
+      perFile.push(r.header);
     }
     if (all) out.push({ display, perFile });
   }
@@ -146,28 +151,40 @@ function commonColumns(files: FileForAi[]): { display: string; perFile: string[]
 
 function pickBestKey(
   shared: { display: string; perFile: string[] }[],
+  files: FileForAi[],
   preferred?: string | null,
 ): { key: string | null; tiedCandidates: string[] } {
-  // A user-supplied preferred key ALWAYS wins, even if no headers overlap
-  // exactly across all files — the engine's fuzzy resolver handles per-file
-  // header variance.
+  // A user-supplied preferred key wins whenever it names a real column —
+  // header variance across files is handled by the key resolver. It is only
+  // rejected when it matches nothing at all, so the failure surfaces here as
+  // a clarification instead of as an error thrown from inside an operation.
   if (preferred) {
     const match = shared.find((s) => norm(s.display) === norm(preferred));
     if (match) return { key: match.display, tiedCandidates: [] };
-    return { key: preferred, tiedCandidates: [] };
+    const resolvesSomewhere = files.some(
+      (f) => resolveKeyColumn(fileHeaders(f), preferred).status === "resolved",
+    );
+    if (resolvesSomewhere) return { key: preferred, tiedCandidates: [] };
+    // fall through to normal selection — the named column doesn't exist
   }
 
   if (shared.length === 0) return { key: null, tiedCandidates: [] };
 
   if (shared.length === 1) return { key: shared[0].display, tiedCandidates: [] };
 
+  // Inspection evidence (uniqueness-derived likely keys) outranks the
+  // name-hint heuristic, which is only a weak tiebreaker.
+  const bonuses = inspectorKeyBonuses(files);
   const scored = shared
-    .map((c) => ({ c, score: scoreKey(c.display) }))
+    .map((c) => ({
+      c,
+      score: (bonuses.get(norm(c.display)) ?? 0) * 100 + scoreKey(c.display),
+    }))
     .sort((a, b) => b.score - a.score);
 
   const top = scored[0];
   if (top.score === 0) {
-    // No hint match at all → ambiguous; return all shared as candidates
+    // No evidence at all → ambiguous; return all shared as candidates
     return { key: null, tiedCandidates: shared.map((s) => s.display) };
   }
   const tied = scored.filter((s) => s.score === top.score).map((s) => s.c.display);

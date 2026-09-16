@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { resolveKeyColumn, resolveKeyAcrossFiles } from "./key-resolution";
+import { resolveKeyColumn, resolveKeyAcrossFiles } from "../src/lib/excel/engine/shared/key-resolution";
 
 describe("resolveKeyColumn", () => {
   it("prefers an exact normalized match over any fuzzy candidate", () => {

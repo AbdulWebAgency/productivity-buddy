@@ -1,16 +1,29 @@
 import type { PlanOp } from "../../types";
-import { resolveColumn } from "../shared/headers";
+import { resolveKeyColumn } from "../shared/key-resolution";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import type { OpHandler } from "../registry";
 
 export function opDedupe(
   grid: SheetGrid,
   op: Extract<PlanOp, { op: "dedupe" }>,
-): { grid: SheetGrid; removed: number } {
+): { grid: SheetGrid; removed: number; keyWarning?: string } {
   const seen = new Set<string>();
   const kept: CellValue[][] = [];
   let removed = 0;
-  const keyIdx = op.keyColumn ? resolveColumn(grid.headers, op.keyColumn) : -1;
+  let keyIdx = -1;
+  let keyWarning: string | undefined;
+  if (op.keyColumn) {
+    const r = resolveKeyColumn(grid.headers, op.keyColumn);
+    if (r.status === "resolved") {
+      keyIdx = r.index;
+    } else if (r.status === "ambiguous") {
+      keyWarning = `Dedupe key "${op.keyColumn}" is ambiguous (${r.candidates
+        .map((c) => `"${c.header}"`)
+        .join(", ")}) — removed full-row duplicates instead.`;
+    } else {
+      keyWarning = `Dedupe key "${op.keyColumn}" was not found — removed full-row duplicates instead.`;
+    }
+  }
   for (const r of grid.rows) {
     const key =
       op.strategy === "key" && keyIdx >= 0

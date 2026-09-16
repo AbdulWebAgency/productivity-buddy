@@ -1,5 +1,5 @@
 import type { PlanOp } from "../../types";
-import { resolveColumn } from "../shared/headers";
+import { resolveKeyAcrossFiles } from "../shared/key-resolution";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import type { OpHandler } from "../registry";
 
@@ -15,10 +15,12 @@ export function opMerge(
 } {
   if (grids.length === 0) throw new Error("No input grids");
 
-  const perFileKeyIdx = grids.map((g) => resolveColumn(g.headers, op.keyColumn));
-  perFileKeyIdx.forEach((idx, i) => {
-    if (idx < 0) throw new Error(`Key column "${op.keyColumn}" not found in file "${fileNames[i]}"`);
-  });
+  const resolvedKeys = resolveKeyAcrossFiles(
+    grids.map((g) => g.headers),
+    op.keyColumn,
+    fileNames,
+  );
+  const perFileKeyIdx = resolvedKeys.map((r) => r.index);
 
   const canonicalHeaders: string[] = [op.keyColumn];
   const columnMap: Map<string, number> = new Map();

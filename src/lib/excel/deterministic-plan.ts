@@ -238,7 +238,7 @@ export function tryDeterministicPlan(
   const shared = commonColumns(files);
   const sharedNames = shared.map((s) => s.display);
 
-  const picked = pickBestKey(shared, opts.preferredKey ?? null);
+  const picked = pickBestKey(shared, files, opts.preferredKey ?? null);
   const buildKeyOp = (): { key: string | null; tied: string[] } => {
     if (picked.key) return { key: picked.key, tied: [] };
     return { key: null, tied: picked.tiedCandidates.length ? picked.tiedCandidates : sharedNames };

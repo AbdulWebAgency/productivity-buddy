@@ -7,15 +7,58 @@
 import type { Plan, PlanOp } from "./types";
 import { classifyIntent, type Intent } from "./intent";
 import { normalizeHeader as norm, scoreKey, resolveColumn } from "./engine/shared/headers";
+import { resolveKeyColumn } from "./engine/shared/key-resolution";
+import { primarySheetOf } from "@/lib/workspace/primary-sheet";
+
+type InspectorLike = {
+  sheets?: {
+    name: string;
+    headers?: string[];
+    likelyKeys?: string[];
+    duplicateKeyValues?: number;
+    worksheetType?: string;
+    likelyPrimaryTable?: boolean;
+    rank?: number;
+  }[];
+  primaryDataSheet?: string | null;
+} | null;
 
 export type FileForAi = {
   index: number;
   name: string;
   sheets: { name: string; headers: string[] }[];
+  // Optional inspection report; when present it informs key selection.
+  inspector?: unknown;
 };
 
+function inspectorOf(f: FileForAi): InspectorLike {
+  return (f.inspector ?? null) as InspectorLike;
+}
+
 function fileHeaders(f: FileForAi): string[] {
+  const primary = primarySheetOf(inspectorOf(f));
+  if (primary?.headers?.length) return primary.headers;
   return f.sheets[0]?.headers ?? [];
+}
+
+/**
+ * Bonus score per normalized header name, derived from the inspection layer:
+ * columns the inspector flagged as likely keys, ranked, and penalised when
+ * they contain duplicate values.
+ */
+function inspectorKeyBonuses(files: FileForAi[]): Map<string, number> {
+  const bonuses = new Map<string, number>();
+  for (const f of files) {
+    const sheet = primarySheetOf(inspectorOf(f));
+    const likely = sheet?.likelyKeys ?? [];
+    likely.forEach((name, i) => {
+      const k = norm(name);
+      const dupPenalty = i === 0 && (sheet?.duplicateKeyValues ?? 0) > 0 ? 2 : 0;
+      const bonus = Math.max(1, 4 - i) - dupPenalty;
+      bonuses.set(k, (bonuses.get(k) ?? 0) + bonus);
+    });
+  }
+  return bonuses;
 }
 
 // Extract "give me only Name, Reg No and Email"-style column requests.

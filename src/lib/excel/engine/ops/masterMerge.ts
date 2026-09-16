@@ -1,5 +1,5 @@
 import type { PlanOp } from "../../types";
-import { resolveColumn } from "../shared/headers";
+import { resolveKeyAcrossFiles, resolveKeyColumn } from "../shared/key-resolution";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { safeSheetName, writeGridToSheet } from "../shared/workbook";
 import { applyProjection, type OpHandler } from "../registry";
@@ -17,11 +17,18 @@ export function opMasterMerge(
   op: Extract<PlanOp, { op: "master_merge" }>,
 ): MasterMergeResult {
   if (grids.length === 0) throw new Error("No input grids");
-  const keyIdxs = grids.map((g) => resolveColumn(g.headers, op.keyColumn));
-  keyIdxs.forEach((idx, i) => {
-    if (idx < 0 && op.joinType !== "append")
-      throw new Error(`Key column "${op.keyColumn}" not found in file "${fileNames[i]}"`);
-  });
+  // append ignores the key entirely, so tolerate an unresolvable key there.
+  const keyIdxs =
+    op.joinType === "append"
+      ? grids.map((g) => {
+          const r = resolveKeyColumn(g.headers, op.keyColumn);
+          return r.status === "resolved" ? r.index : -1;
+        })
+      : resolveKeyAcrossFiles(
+          grids.map((g) => g.headers),
+          op.keyColumn,
+          fileNames,
+        ).map((r) => r.index);
 
   if (op.joinType === "append") {
     const headerSet: string[] = ["__Source"];

@@ -7,15 +7,58 @@
 import type { Plan, PlanOp } from "./types";
 import { classifyIntent, type Intent } from "./intent";
 import { normalizeHeader as norm, scoreKey, resolveColumn } from "./engine/shared/headers";
+import { resolveKeyColumn } from "./engine/shared/key-resolution";
+import { primarySheetOf } from "@/lib/workspace/primary-sheet";
+
+type InspectorLike = {
+  sheets?: {
+    name: string;
+    headers?: string[];
+    likelyKeys?: string[];
+    duplicateKeyValues?: number;
+    worksheetType?: string;
+    likelyPrimaryTable?: boolean;
+    rank?: number;
+  }[];
+  primaryDataSheet?: string | null;
+} | null;
 
 export type FileForAi = {
   index: number;
   name: string;
   sheets: { name: string; headers: string[] }[];
+  // Optional inspection report; when present it informs key selection.
+  inspector?: unknown;
 };
 
+function inspectorOf(f: FileForAi): InspectorLike {
+  return (f.inspector ?? null) as InspectorLike;
+}
+
 function fileHeaders(f: FileForAi): string[] {
+  const primary = primarySheetOf(inspectorOf(f));
+  if (primary?.headers?.length) return primary.headers;
   return f.sheets[0]?.headers ?? [];
+}
+
+/**
+ * Bonus score per normalized header name, derived from the inspection layer:
+ * columns the inspector flagged as likely keys, ranked, and penalised when
+ * they contain duplicate values.
+ */
+function inspectorKeyBonuses(files: FileForAi[]): Map<string, number> {
+  const bonuses = new Map<string, number>();
+  for (const f of files) {
+    const sheet = primarySheetOf(inspectorOf(f));
+    const likely = sheet?.likelyKeys ?? [];
+    likely.forEach((name, i) => {
+      const k = norm(name);
+      const dupPenalty = i === 0 && (sheet?.duplicateKeyValues ?? 0) > 0 ? 2 : 0;
+      const bonus = Math.max(1, 4 - i) - dupPenalty;
+      bonuses.set(k, (bonuses.get(k) ?? 0) + bonus);
+    });
+  }
+  return bonuses;
 }
 
 // Extract "give me only Name, Reg No and Email"-style column requests.
@@ -79,22 +122,27 @@ function extractProjection(
   return { columns: cleaned };
 }
 
+// Shared columns are detected with the SAME resolver the engine uses for key
+// columns, so the planner never asks for clarification on a pair the engine
+// would happily match (and never proposes a key the engine would reject).
 function commonColumns(files: FileForAi[]): { display: string; perFile: string[] }[] {
   if (files.length === 0) return [];
-  const perFileMaps = files.map((f) => {
-    const m = new Map<string, string>();
-    fileHeaders(f).forEach((h) => m.set(norm(h), h));
-    return m;
-  });
-  const base = perFileMaps[0];
+  const headerSets = files.map((f) => fileHeaders(f));
   const out: { display: string; perFile: string[] }[] = [];
-  for (const [k, display] of base) {
+  const seen = new Set<string>();
+  for (const display of headerSets[0]) {
+    const k = norm(display);
+    if (!k || seen.has(k)) continue;
+    seen.add(k);
     const perFile: string[] = [display];
     let all = true;
-    for (let i = 1; i < perFileMaps.length; i++) {
-      const hit = perFileMaps[i].get(k);
-      if (!hit) { all = false; break; }
-      perFile.push(hit);
+    for (let i = 1; i < headerSets.length; i++) {
+      const r = resolveKeyColumn(headerSets[i], display);
+      if (r.status !== "resolved") {
+        all = false;
+        break;
+      }
+      perFile.push(r.header);
     }
     if (all) out.push({ display, perFile });
   }
@@ -103,28 +151,40 @@ function commonColumns(files: FileForAi[]): { display: string; perFile: string[]
 
 function pickBestKey(
   shared: { display: string; perFile: string[] }[],
+  files: FileForAi[],
   preferred?: string | null,
 ): { key: string | null; tiedCandidates: string[] } {
-  // A user-supplied preferred key ALWAYS wins, even if no headers overlap
-  // exactly across all files — the engine's fuzzy resolver handles per-file
-  // header variance.
+  // A user-supplied preferred key wins whenever it names a real column —
+  // header variance across files is handled by the key resolver. It is only
+  // rejected when it matches nothing at all, so the failure surfaces here as
+  // a clarification instead of as an error thrown from inside an operation.
   if (preferred) {
     const match = shared.find((s) => norm(s.display) === norm(preferred));
     if (match) return { key: match.display, tiedCandidates: [] };
-    return { key: preferred, tiedCandidates: [] };
+    const resolvesSomewhere = files.some(
+      (f) => resolveKeyColumn(fileHeaders(f), preferred).status === "resolved",
+    );
+    if (resolvesSomewhere) return { key: preferred, tiedCandidates: [] };
+    // fall through to normal selection — the named column doesn't exist
   }
 
   if (shared.length === 0) return { key: null, tiedCandidates: [] };
 
   if (shared.length === 1) return { key: shared[0].display, tiedCandidates: [] };
 
+  // Inspection evidence (uniqueness-derived likely keys) outranks the
+  // name-hint heuristic, which is only a weak tiebreaker.
+  const bonuses = inspectorKeyBonuses(files);
   const scored = shared
-    .map((c) => ({ c, score: scoreKey(c.display) }))
+    .map((c) => ({
+      c,
+      score: (bonuses.get(norm(c.display)) ?? 0) * 100 + scoreKey(c.display),
+    }))
     .sort((a, b) => b.score - a.score);
 
   const top = scored[0];
   if (top.score === 0) {
-    // No hint match at all → ambiguous; return all shared as candidates
+    // No evidence at all → ambiguous; return all shared as candidates
     return { key: null, tiedCandidates: shared.map((s) => s.display) };
   }
   const tied = scored.filter((s) => s.score === top.score).map((s) => s.c.display);
@@ -178,7 +238,7 @@ export function tryDeterministicPlan(
   const shared = commonColumns(files);
   const sharedNames = shared.map((s) => s.display);
 
-  const picked = pickBestKey(shared, opts.preferredKey ?? null);
+  const picked = pickBestKey(shared, files, opts.preferredKey ?? null);
   const buildKeyOp = (): { key: string | null; tied: string[] } => {
     if (picked.key) return { key: picked.key, tied: [] };
     return { key: null, tied: picked.tiedCandidates.length ? picked.tiedCandidates : sharedNames };

@@ -1,5 +1,5 @@
 import type { PlanOp } from "../../types";
-import { resolveColumn } from "../shared/headers";
+import { resolveKeyAcrossFiles } from "../shared/key-resolution";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { safeSheetName, writeGridToSheet } from "../shared/workbook";
 import { applyProjection, type OpHandler } from "../registry";
@@ -28,13 +28,16 @@ export function opDiff(
   namesA: string,
   namesB: string,
 ): DiffResult {
-  const kA = resolveColumn(a.headers, op.keyColumn);
-  const kB = resolveColumn(b.headers, op.keyColumn);
-  if (kA < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesA}`);
-  if (kB < 0) throw new Error(`Key column "${op.keyColumn}" not found in ${namesB}`);
+  const [rA, rB] = resolveKeyAcrossFiles(
+    [a.headers, b.headers],
+    op.keyColumn,
+    [namesA, namesB],
+  );
+  const kA = rA.index;
+  const kB = rB.index;
 
-  const resolvedA = a.headers[kA];
-  const resolvedB = b.headers[kB];
+  const resolvedA = rA.header;
+  const resolvedB = rB.header;
 
   const mapA = new Map<string, CellValue[]>();
   let emptyKeysA = 0;

@@ -89,16 +89,13 @@ export const registerJobFiles = createServerFn({ method: "POST" })
       sheet_meta: Json;
     }[] = [];
 
-
     for (const f of data.files) {
-      const { data: blob, error: dlErr } = await supabaseAdmin.storage
-        .from("excel-uploads")
-        .download(f.storagePath);
+      const { data: blob, error: dlErr } = await supabaseAdmin.storage.from("excel-uploads").download(f.storagePath);
       if (dlErr || !blob) throw new Error(`Download failed for ${f.originalName}: ${dlErr?.message}`);
       const buf = await blob.arrayBuffer();
       let meta: unknown = null;
       try {
-        const wb = new ExcelJSModule.default.Workbook();
+        const wb = new ExcelJSModule.Workbook();
         await wb.xlsx.load(buf);
         meta = extractSheetMeta(wb);
       } catch (e) {
@@ -115,7 +112,6 @@ export const registerJobFiles = createServerFn({ method: "POST" })
         sheet_meta: meta as Json,
       });
     }
-
 
     const { error: insErr } = await supabase.from("excel_job_files").insert(rows);
     if (insErr) throw new Error(insErr.message);
@@ -171,11 +167,7 @@ export const planJob = createServerFn({ method: "POST" })
     const apiKey = process.env.LOVABLE_API_KEY;
     if (!apiKey) throw new Error("AI gateway not configured");
 
-    const { data: job } = await supabase
-      .from("excel_jobs")
-      .select("id,intent,user_id")
-      .eq("id", data.jobId)
-      .single();
+    const { data: job } = await supabase.from("excel_jobs").select("id,intent,user_id").eq("id", data.jobId).single();
     if (!job || job.user_id !== userId) throw new Error("Job not found");
 
     const { data: files } = await supabase
@@ -306,11 +298,7 @@ export const runJob = createServerFn({ method: "POST" })
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { runPlan } = await import("./excel/engine.server");
 
-    const { data: job } = await supabase
-      .from("excel_jobs")
-      .select("*")
-      .eq("id", data.jobId)
-      .single();
+    const { data: job } = await supabase.from("excel_jobs").select("*").eq("id", data.jobId).single();
     if (!job || job.user_id !== userId) throw new Error("Job not found");
 
     const plan = data.plan ?? PlanSchema.parse(job.ai_plan);
@@ -339,12 +327,10 @@ export const runJob = createServerFn({ method: "POST" })
 
       const outputName = `${job.name.replace(/[^a-z0-9-_ ]/gi, "").slice(0, 40) || "result"}.xlsx`;
       const outputPath = `${userId}/${data.jobId}/output/${outputName}`;
-      const { error: upErr } = await supabaseAdmin.storage
-        .from("excel-outputs")
-        .upload(outputPath, result.buffer, {
-          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          upsert: true,
-        });
+      const { error: upErr } = await supabaseAdmin.storage.from("excel-outputs").upload(outputPath, result.buffer, {
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        upsert: true,
+      });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
 
       type Json2 = import("@/integrations/supabase/types").Json;
@@ -359,7 +345,6 @@ export const runJob = createServerFn({ method: "POST" })
           completed_at: new Date().toISOString(),
         })
         .eq("id", data.jobId);
-
 
       await supabase.from("excel_job_files").insert({
         job_id: data.jobId,
@@ -408,10 +393,7 @@ export const deleteJob = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: files } = await supabase
-      .from("excel_job_files")
-      .select("storage_path,role")
-      .eq("job_id", data.jobId);
+    const { data: files } = await supabase.from("excel_job_files").select("storage_path,role").eq("job_id", data.jobId);
     if (files) {
       const uploads = files.filter((f) => f.role === "input").map((f) => f.storage_path);
       const outputs = files.filter((f) => f.role === "output").map((f) => f.storage_path);

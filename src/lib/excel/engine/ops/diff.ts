@@ -3,6 +3,7 @@ import { resolveKeyAcrossFiles } from "../shared/key-resolution";
 import type { CellValue, SheetGrid } from "../shared/workbook";
 import { safeSheetName, writeGridToSheet } from "../shared/workbook";
 import { applyProjection, type OpHandler } from "../registry";
+import { normalizeHeader } from "../shared/headers";
 
 export type DiffResult = {
   missingInA: SheetGrid; // rows present in B but not A (add to A)
@@ -28,11 +29,7 @@ export function opDiff(
   namesA: string,
   namesB: string,
 ): DiffResult {
-  const [rA, rB] = resolveKeyAcrossFiles(
-    [a.headers, b.headers],
-    op.keyColumn,
-    [namesA, namesB],
-  );
+  const [rA, rB] = resolveKeyAcrossFiles([a.headers, b.headers], op.keyColumn, [namesA, namesB]);
   const kA = rA.index;
   const kB = rB.index;
 
@@ -69,18 +66,40 @@ export function opDiff(
   const missingInB: CellValue[][] = [];
   const changed: CellValue[][] = [];
 
+  const bHeaderIndexByNormalized = new Map<string, number>();
+
+  for (let i = 0; i < b.headers.length; i++) {
+    const normalized = normalizeHeader(b.headers[i]);
+    if (!bHeaderIndexByNormalized.has(normalized)) {
+      bHeaderIndexByNormalized.set(normalized, i);
+    }
+  }
+
   for (const [key, rowB] of mapB) {
     if (!mapA.has(key)) missingInA.push(rowB);
     else {
       const rowA = mapA.get(key)!;
       const changedColumns: string[] = [];
+
       for (let i = 0; i < a.headers.length; i++) {
         if (i === kA) continue;
+
+        const normalizedHeader = normalizeHeader(a.headers[i]);
+        const j = bHeaderIndexByNormalized.get(normalizedHeader);
+
+        if (j === undefined) continue;
+
         const valueA = String(rowA[i] ?? "").trim();
-        const valueB = String(rowB[i] ?? "").trim();
-        if (valueA !== valueB) changedColumns.push(a.headers[i]);
+        const valueB = String(rowB[j] ?? "").trim();
+
+        if (valueA !== valueB) {
+          changedColumns.push(a.headers[i]);
+        }
       }
-      if (changedColumns.length > 0) changed.push([key, changedColumns.join(", ")]);
+
+      if (changedColumns.length > 0) {
+        changed.push([key, changedColumns.join(", ")]);
+      }
     }
   }
   for (const [key, rowA] of mapA) {

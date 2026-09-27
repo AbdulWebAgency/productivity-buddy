@@ -95,7 +95,7 @@ export const registerJobFiles = createServerFn({ method: "POST" })
       const buf = await blob.arrayBuffer();
       let meta: unknown = null;
       try {
-        const wb = new ExcelJSModule.Workbook();
+        const wb = new ExcelJS.Workbook();
         await wb.xlsx.load(buf);
         meta = extractSheetMeta(wb);
       } catch (e) {

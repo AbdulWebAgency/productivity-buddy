@@ -2,6 +2,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
+import ExcelJS from "exceljs";
 import { PlanSchema, SheetMetaSchema } from "./excel/types";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB
@@ -74,7 +75,6 @@ export const registerJobFiles = createServerFn({ method: "POST" })
     if (job.user_id !== userId) throw new Error("Forbidden");
 
     // Load each file, extract sheet meta.
-    const ExcelJSModule = await import("exceljs");
     const { extractSheetMeta } = await import("./excel/engine.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -95,7 +95,7 @@ export const registerJobFiles = createServerFn({ method: "POST" })
       const buf = await blob.arrayBuffer();
       let meta: unknown = null;
       try {
-        const wb = new ExcelJSModule.Workbook();
+        const wb = new ExcelJS.Workbook();
         await wb.xlsx.load(buf);
         meta = extractSheetMeta(wb);
       } catch (e) {

@@ -204,7 +204,7 @@ export async function readWorkbook(buffer: ArrayBuffer | Uint8Array): Promise<Wo
     type: "array",
     cellFormula: true,
     cellDates: true,
-    cellStyles: false,
+    cellStyles: true, // needed for column widths (!cols) and hidden rows/cols
     bookVBA: false,
   });
   return wrap(book);

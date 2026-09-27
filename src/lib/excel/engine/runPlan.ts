@@ -1,6 +1,5 @@
 // Plan orchestrator. Reads inputs, dispatches ops through the registry,
 // finalises the workbook, returns bytes + stats.
-import ExcelJS from "exceljs";
 import type { Plan, PlanOp } from "../types";
 import type { EngineFile, EngineResult } from "./types";
 import { readWorkbook, sheetToGrid, writeGridToSheet } from "./shared/workbook";
@@ -18,12 +17,10 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
   const grids = workbooks.map((wb) => sheetToGrid(wb.worksheets[0]));
 
   // Determine output strategy.
-  const hasMutating = plan.ops.some(
-    (o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column",
-  );
+  const hasMutating = plan.ops.some((o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column");
   // Merge/dedupe/highlight can preserve first-workbook styling by mutating a
   // copy of the first workbook. Diff/summary produce brand-new deliverables.
-  const outWb = hasMutating ? workbooks[0] : new ExcelJS.Workbook();
+  const outWb = hasMutating ? workbooks[0] : new (await import("exceljs")).Workbook();
   outWb.creator = "Productivity Buddy";
   outWb.created = new Date();
 
@@ -96,10 +93,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
   if (state.producedSheets === 0) {
     writeGridToSheet(outWb, "No output", {
       headers: ["Notice"],
-      rows: [
-        ["No operation produced output. See warnings for details."],
-        ...warnings.map((w) => [w] as CellValue[]),
-      ],
+      rows: [["No operation produced output. See warnings for details."], ...warnings.map((w) => [w] as CellValue[])],
     });
     warnings.push("No operation produced output.");
   }

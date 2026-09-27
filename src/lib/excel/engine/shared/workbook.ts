@@ -1,5 +1,5 @@
 // Workbook I/O: reading, grid extraction, sheet writing, sheet-name safety.
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import type { SheetMeta } from "../../types";
 import { HIGHLIGHT_UNMATCHED, autoWidth, styleHeader } from "./styling";
 import { detectHeaderRow } from "@/lib/excel/header-detection";
@@ -8,7 +8,8 @@ export type CellValue = string | number | boolean | null;
 export type SheetGrid = { headers: string[]; rows: CellValue[][] };
 
 export async function readWorkbook(buffer: ArrayBuffer): Promise<ExcelJS.Workbook> {
-  const wb = new ExcelJS.Workbook();
+  const ExcelJSModule = await import("exceljs");
+  const wb = new ExcelJSModule.Workbook();
   await wb.xlsx.load(buffer);
   return wb;
 }

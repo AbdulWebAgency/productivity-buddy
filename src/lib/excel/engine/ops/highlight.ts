@@ -1,6 +1,6 @@
 // highlight_column + recalc live together — both are "post-processing" ops
 // that don't produce their own output sheet.
-import ExcelJS from "exceljs";
+import type ExcelJS from "exceljs";
 import { HyperFormula } from "hyperformula";
 import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";

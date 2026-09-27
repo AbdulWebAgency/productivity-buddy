@@ -3,7 +3,7 @@
 import ExcelJS from "exceljs";
 import type { Plan, PlanOp } from "../types";
 import type { EngineFile, EngineResult } from "./types";
-import { readWorkbook, sheetToGrid, writeGridToSheet } from "./shared/workbook";
+import { readLegacyWorkbook as readWorkbook, sheetToGrid, writeGridToSheet } from "./shared/workbook";
 import type { CellValue } from "./shared/workbook";
 import { applyProjection, type EngineState, type OpCtx } from "./registry";
 import { recalcFormulas } from "./ops/highlight";

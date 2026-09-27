@@ -7,6 +7,10 @@ import type { CellValue } from "./shared/workbook";
 import { applyProjection, type EngineState, type OpCtx } from "./registry";
 import { recalcFormulas } from "./ops/highlight";
 import { getOpHandler } from "./ops";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const ExcelJSModule = require("exceljs") as typeof import("exceljs");
 
 export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineResult> {
   const warnings: string[] = [...plan.warnings];
@@ -20,7 +24,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
   const hasMutating = plan.ops.some((o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column");
   // Merge/dedupe/highlight can preserve first-workbook styling by mutating a
   // copy of the first workbook. Diff/summary produce brand-new deliverables.
-  const outWb = hasMutating ? workbooks[0] : new (await import("exceljs")).Workbook();
+  const outWb = hasMutating ? workbooks[0] : new ExcelJSModule.Workbook();
   outWb.creator = "Productivity Buddy";
   outWb.created = new Date();
 

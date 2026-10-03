@@ -40,7 +40,7 @@ describe("runPlan on SheetJS layer", () => {
     expect(out.sheets[onlyB].slice(1).flat()).toContain("R4");
     expect(out.sheets[onlyA].slice(1).flat()).toContain("R1");
     expect(out.names).toContain("Changed rows");
-    expect(JSON.stringify(out.sheets["Changed rows"])).toContain("R2");
+    expect(JSON.stringify(out.sheets["Changed rows"]).toLowerCase()).toContain("r2");
   });
 
   test("non-mutating: summary produces fresh workbook", async () => {

@@ -56,6 +56,9 @@ export interface SheetHandle {
   getCell(row1Indexed: number, col1Indexed: number): CellHandle;
   /** Column widths in characters (1-indexed column -> width). */
   getColumnWidth(col1Indexed: number): number | undefined;
+  /** Update the cached result of an existing formula cell (formula kept).
+   *  Returns false when the cell holds no formula. */
+  setFormulaResult(row1Indexed: number, col1Indexed: number, result: string | number | boolean | Date): boolean;
   /** Underlying SheetJS worksheet — boundary-internal, do not use in ops. */
   readonly raw: XLSX.WorkSheet;
 }
@@ -143,6 +146,16 @@ function makeSheet(book: XLSX.WorkBook, name: string): SheetHandle {
     },
     getCell(r, c) {
       return makeCell(ws, r, c);
+    },
+    setFormulaResult(r, c, result) {
+      const addr = XLSX.utils.encode_cell({ r: Math.max(1, Math.floor(r)) - 1, c: Math.max(1, Math.floor(c)) - 1 });
+      const cell = (ws as Record<string, XLSX.CellObject | undefined>)[addr];
+      if (!cell || !cell.f) return false;
+      cell.v = result;
+      cell.t =
+        typeof result === "number" ? "n" : typeof result === "boolean" ? "b" : result instanceof Date ? "d" : "s";
+      delete cell.w; // stale formatted text
+      return true;
     },
     getColumnWidth(c) {
       const col = ws["!cols"]?.[c - 1];

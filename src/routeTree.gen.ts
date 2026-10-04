@@ -9,32 +9,42 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as AuthRouteImport } from './routes/auth'
-import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedAppIndexRouteImport } from './routes/_authenticated/app.index'
-import { Route as AuthenticatedAppWorkspacesRouteImport } from './routes/_authenticated/app.workspaces'
-import { Route as AuthenticatedAppNewRouteImport } from './routes/_authenticated/app.new'
 import { Route as AuthenticatedAppJobIdRouteImport } from './routes/_authenticated/app.$jobId'
+import { Route as AuthenticatedAppNewRouteImport } from './routes/_authenticated/app.new'
+import { Route as AuthenticatedAppWorkspacesRouteImport } from './routes/_authenticated/app.workspaces'
 import { Route as AuthenticatedAppWWorkspaceIdRouteImport } from './routes/_authenticated/app.w.$workspaceId'
 
-const AuthRoute = AuthRouteImport.update({
-  id: '/auth',
-  path: '/auth',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedRouteRoute = AuthenticatedRouteRouteImport.update({
   id: '/_authenticated',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthenticatedAppIndexRoute = AuthenticatedAppIndexRouteImport.update({
   id: '/app/',
   path: '/app/',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAppJobIdRoute = AuthenticatedAppJobIdRouteImport.update({
+  id: '/app/$jobId',
+  path: '/app/$jobId',
+  getParentRoute: () => AuthenticatedRouteRoute,
+} as any)
+const AuthenticatedAppNewRoute = AuthenticatedAppNewRouteImport.update({
+  id: '/app/new',
+  path: '/app/new',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
 const AuthenticatedAppWorkspacesRoute =
@@ -43,16 +53,6 @@ const AuthenticatedAppWorkspacesRoute =
     path: '/app/workspaces',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
-const AuthenticatedAppNewRoute = AuthenticatedAppNewRouteImport.update({
-  id: '/app/new',
-  path: '/app/new',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
-const AuthenticatedAppJobIdRoute = AuthenticatedAppJobIdRouteImport.update({
-  id: '/app/$jobId',
-  path: '/app/$jobId',
-  getParentRoute: () => AuthenticatedRouteRoute,
-} as any)
 const AuthenticatedAppWWorkspaceIdRoute =
   AuthenticatedAppWWorkspaceIdRouteImport.update({
     id: '/app/w/$workspaceId',
@@ -128,11 +128,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/auth': {
-      id: '/auth'
-      path: '/auth'
-      fullPath: '/auth'
-      preLoaderRoute: typeof AuthRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated': {
@@ -142,11 +142,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_authenticated/app/': {
@@ -156,11 +156,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppIndexRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/app/workspaces': {
-      id: '/_authenticated/app/workspaces'
-      path: '/app/workspaces'
-      fullPath: '/app/workspaces'
-      preLoaderRoute: typeof AuthenticatedAppWorkspacesRouteImport
+    '/_authenticated/app/$jobId': {
+      id: '/_authenticated/app/$jobId'
+      path: '/app/$jobId'
+      fullPath: '/app/$jobId'
+      preLoaderRoute: typeof AuthenticatedAppJobIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app/new': {
@@ -170,11 +170,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAppNewRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/_authenticated/app/$jobId': {
-      id: '/_authenticated/app/$jobId'
-      path: '/app/$jobId'
-      fullPath: '/app/$jobId'
-      preLoaderRoute: typeof AuthenticatedAppJobIdRouteImport
+    '/_authenticated/app/workspaces': {
+      id: '/_authenticated/app/workspaces'
+      path: '/app/workspaces'
+      fullPath: '/app/workspaces'
+      preLoaderRoute: typeof AuthenticatedAppWorkspacesRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/app/w/$workspaceId': {

@@ -80,17 +80,10 @@ describe("SheetJS consumers", () => {
     expect(back.worksheets[0].getColumnWidth(1)).toBeCloseTo(12, 0);
   });
 
-  test("normal runtime modules do not import ExcelJS", async () => {
-    for (const p of [
-      "src/lib/excel/engine/shared/workbook.ts",
-      "src/lib/excel/engine/shared/styling.ts",
-      "src/lib/excel/header-detection.ts",
-      "src/lib/workspace/sheet-classifier.ts",
-      "src/lib/workspace/inspector.server.ts",
-      "src/lib/excel.functions.ts",
-      "src/lib/workspace.functions.ts",
-    ]) {
-      expect(await Bun.file(p).text()).not.toMatch(/from "exceljs"|import\("exceljs"\)/);
-    }
+  test("SheetJS is the only spreadsheet I/O dependency", async () => {
+    const pkg = await Bun.file("package.json").json();
+    const deps = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+    expect(deps).toContain("xlsx");
+    expect(deps.filter((d) => /^excel/i.test(d))).toEqual([]);
   });
 });

@@ -1,5 +1,5 @@
 // Server-only Excel inspector: analyze a workbook beyond sheet meta.
-import type ExcelJS from "exceljs";
+import type { WorkbookHandle } from "@/lib/excel/engine/shared/workbook";
 import { detectHeaderRow } from "@/lib/excel/header-detection";
 import { KEY_HINTS, normalizeHeader } from "@/lib/excel/engine/shared/headers";
 import { classifySheet, type WorksheetType } from "./sheet-classifier";
@@ -41,7 +41,7 @@ function scoreHeader(h: string): number {
   return s;
 }
 
-export function inspectWorkbook(wb: ExcelJS.Workbook): InspectorReport {
+export function inspectWorkbook(wb: WorkbookHandle): InspectorReport {
   const warnings: string[] = [];
 
   const sheets: InspectorSheetReport[] = wb.worksheets.map((ws) => {

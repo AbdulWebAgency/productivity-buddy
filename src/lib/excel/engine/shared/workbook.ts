@@ -1,19 +1,14 @@
 // Workbook compatibility boundary.
 //
-// Phase 1 of the ExcelJS -> SheetJS migration. SheetJS (`xlsx`) is isolated
-// behind WorkbookHandle / SheetHandle / RowHandle / CellHandle, which keep the
-// engine's 1-indexed (row, col) calling convention. SheetJS is 0-indexed
-// internally; all translation happens here.
-//
-// Transitional: callers not yet migrated (runPlan, highlight, registration
-// functions) still pass ExcelJS objects. `extractSheetMeta`, `sheetToGrid`,
-// `writeGridToSheet` and `cellToValue` accept BOTH shapes; the legacy ExcelJS
-// reader is exposed as `readLegacyWorkbook` until Phase 2 removes it.
-import ExcelJS from "exceljs";
+// SheetJS (`xlsx`) is isolated behind WorkbookHandle / SheetHandle /
+// RowHandle / CellHandle, which keep the engine's 1-indexed (row, col)
+// calling convention. SheetJS is 0-indexed internally; all translation
+// happens here. This module has no ExcelJS dependency. The temporary legacy
+// ExcelJS reader lives in ./legacy-workbook.server.ts.
 import * as XLSX from "xlsx";
 
 import type { SheetMeta } from "../../types";
-import { HIGHLIGHT_UNMATCHED, autoWidth, styleHeader } from "./styling";
+import { columnWidths } from "./styling";
 import { detectHeaderRow } from "@/lib/excel/header-detection";
 
 export type CellValue = string | number | boolean | null;
@@ -240,50 +235,33 @@ export async function writeWorkbook(wb: WorkbookHandle): Promise<Buffer> {
   return Buffer.from(new Uint8Array(out));
 }
 
-/** Legacy ExcelJS reader for not-yet-migrated callers (Phase 2 removes). */
-export async function readLegacyWorkbook(buffer: ArrayBuffer): Promise<ExcelJS.Workbook> {
-  const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buffer);
-  return wb;
-}
-
 // ---------------------------------------------------------------------------
-// Shape-agnostic helpers (accept SheetJS handles or legacy ExcelJS objects)
+// Grid / metadata helpers (SheetJS handles only)
 // ---------------------------------------------------------------------------
 
-export function cellToValue(v: ExcelJS.CellValue | RawCellValue): CellValue {
+export function cellToValue(v: RawCellValue): CellValue {
   if (v == null) return null;
   if (typeof v === "string" || typeof v === "number" || typeof v === "boolean") return v;
   if (v instanceof Date) return v.toISOString();
   if (typeof v === "object") {
-    if ("text" in v && typeof v.text === "string") return v.text;
-    if ("richText" in v && Array.isArray(v.richText)) return v.richText.map((r) => r.text).join("");
-    if ("result" in v && v.result !== undefined) return cellToValue(v.result as ExcelJS.CellValue);
+    if ("result" in v && v.result !== undefined) return cellToValue(v.result);
     if ("formula" in v) return null;
   }
   return String(v);
 }
 
-type AnySheet = ExcelJS.Worksheet | SheetHandle;
-type AnyWorkbook = ExcelJS.Workbook | WorkbookHandle;
-
-function cellAt(ws: AnySheet, r: number, c: number): ExcelJS.CellValue | RawCellValue {
-  return isSheetHandle(ws) ? ws.getCell(r, c).value : ws.getRow(r).getCell(c).value;
-}
-
-export function extractSheetMeta(wb: AnyWorkbook): SheetMeta {
-  const list: AnySheet[] = wb.worksheets as AnySheet[];
-  const sheets = list.map((ws) => {
+export function extractSheetMeta(wb: WorkbookHandle): SheetMeta {
+  const sheets = wb.worksheets.map((ws) => {
     const headers: string[] = [];
     for (let c = 1; c <= ws.columnCount; c++) {
-      const v = cellAt(ws, 1, c);
+      const v = ws.getCell(1, c).value;
       if (v == null || v === "") continue;
-      headers[c - 1] = String(isSheetHandle(ws) ? cellToValue(v as RawCellValue) ?? "" : v).trim();
+      headers[c - 1] = String(cellToValue(v) ?? "").trim();
     }
     const sampleRows: CellValue[][] = [];
     for (let r = 2; r <= Math.min(4, ws.rowCount); r++) {
       const out: CellValue[] = [];
-      for (let c = 1; c <= headers.length; c++) out.push(cellToValue(cellAt(ws, r, c)));
+      for (let c = 1; c <= headers.length; c++) out.push(cellToValue(ws.getCell(r, c).value));
       sampleRows.push(out);
     }
     return {
@@ -297,22 +275,19 @@ export function extractSheetMeta(wb: AnyWorkbook): SheetMeta {
   return { sheets };
 }
 
-export function sheetToGrid(ws: AnySheet): SheetGrid {
-  // SheetHandle is structurally compatible with what detectHeaderRow reads
-  // (rowCount, columnCount, getRow(r).getCell(c).value).
-  const headerRow = detectHeaderRow(ws as unknown as ExcelJS.Worksheet);
+export function sheetToGrid(ws: SheetHandle): SheetGrid {
+  const headerRow = detectHeaderRow(ws);
   const maxCol = ws.columnCount;
   const headers: string[] = [];
   for (let c = 1; c <= maxCol; c++) {
-    const v = cellAt(ws, headerRow, c);
-    headers.push(String((isSheetHandle(ws) ? cellToValue(v as RawCellValue) : v) ?? "").trim());
+    headers.push(String(cellToValue(ws.getCell(headerRow, c).value) ?? "").trim());
   }
   const rows: CellValue[][] = [];
   for (let r = headerRow + 1; r <= ws.rowCount; r++) {
     const out: CellValue[] = [];
     let any = false;
     for (let c = 1; c <= maxCol; c++) {
-      const v = cellToValue(cellAt(ws, r, c));
+      const v = cellToValue(ws.getCell(r, c).value);
       if (v !== null && v !== "") any = true;
       out.push(v);
     }
@@ -321,65 +296,32 @@ export function sheetToGrid(ws: AnySheet): SheetGrid {
   return { headers, rows };
 }
 
-function columnWidths(headers: string[], rows: CellValue[][]): XLSX.ColInfo[] {
-  // Same rule as styling.autoWidth.
-  return headers.map((h, i) => {
-    const dataMax = rows.reduce((m, r) => Math.max(m, String(r[i] ?? "").length), 0);
-    return { wch: Math.min(Math.max(h.length + 2, dataMax + 2, 12), 42) };
-  });
-}
-
+/**
+ * Write a grid as a new (or replaced) sheet.
+ *
+ * SheetJS CE limitation: `highlightRows` and `headerStyle` are accepted for
+ * call-site compatibility but cannot be rendered (no cell fills/fonts, no
+ * frozen panes in CE). Column widths and sheet structure are preserved.
+ */
 export function writeGridToSheet(
   wb: WorkbookHandle,
   sheetName: string,
   grid: SheetGrid,
-  opts?: { highlightRows?: Set<number>; headerStyle?: boolean },
-): SheetHandle;
-export function writeGridToSheet(
-  wb: ExcelJS.Workbook,
-  sheetName: string,
-  grid: SheetGrid,
-  opts?: { highlightRows?: Set<number>; headerStyle?: boolean },
-): ExcelJS.Worksheet;
-export function writeGridToSheet(
-  wb: AnyWorkbook,
-  sheetName: string,
-  grid: SheetGrid,
-  opts: { highlightRows?: Set<number>; headerStyle?: boolean } = {},
-): SheetHandle | ExcelJS.Worksheet {
-  if (isHandle(wb)) {
-    // Excel hard limit 31 chars + forbidden characters. Name already produced
-    // by callers is kept when valid, so existing output naming is unchanged.
-    const name = sheetName.replace(/[\\/:?*[\]]/g, " ").slice(0, 31) || "Sheet";
-    wb.removeWorksheet(name);
-    const ws = XLSX.utils.aoa_to_sheet([grid.headers, ...grid.rows]);
-    ws["!cols"] = columnWidths(grid.headers, grid.rows);
-    // Styling (header fill, highlight fill, frozen pane) is not supported by
-    // SheetJS CE and is intentionally out of scope for Phase 1.
-    XLSX.utils.book_append_sheet(wb.raw, ws, name);
-    const book = wb.raw;
-    book.Workbook = book.Workbook ?? {};
-    book.Workbook.Sheets = book.Workbook.Sheets ?? [];
-    while (book.Workbook.Sheets.length < book.SheetNames.length) book.Workbook.Sheets.push({});
-    book.Workbook.Sheets[book.SheetNames.indexOf(name)] = { name, Hidden: 0 };
-    return makeSheet(book, name);
-  }
-
-  const existing = wb.getWorksheet(sheetName);
-  if (existing) wb.removeWorksheet(existing.id);
-  const ws = wb.addWorksheet(sheetName, { views: [{ state: "frozen", ySplit: 1 }] });
-  ws.addRow(grid.headers);
-  grid.rows.forEach((r) => ws.addRow(r));
-  if (opts.headerStyle !== false) styleHeader(ws);
-  autoWidth(ws, grid.headers, grid.rows);
-  if (opts.highlightRows) {
-    opts.highlightRows.forEach((rowIdx) => {
-      ws.getRow(rowIdx + 2).eachCell((cell) => {
-        cell.fill = HIGHLIGHT_UNMATCHED;
-      });
-    });
-  }
-  return ws;
+  _opts: { highlightRows?: Set<number>; headerStyle?: boolean } = {},
+): SheetHandle {
+  // Excel hard limit 31 chars + forbidden characters. Valid caller names are
+  // kept unchanged, so existing output naming is preserved.
+  const name = sheetName.replace(/[\\/:?*[\]]/g, " ").slice(0, 31) || "Sheet";
+  wb.removeWorksheet(name);
+  const ws = XLSX.utils.aoa_to_sheet([grid.headers, ...grid.rows]);
+  ws["!cols"] = columnWidths(grid.headers, grid.rows);
+  XLSX.utils.book_append_sheet(wb.raw, ws, name);
+  const book = wb.raw;
+  book.Workbook = book.Workbook ?? {};
+  book.Workbook.Sheets = book.Workbook.Sheets ?? [];
+  while (book.Workbook.Sheets.length < book.SheetNames.length) book.Workbook.Sheets.push({});
+  book.Workbook.Sheets[book.SheetNames.indexOf(name)] = { name, Hidden: 0 };
+  return makeSheet(book, name);
 }
 
 export function safeSheetName(name: string): string {

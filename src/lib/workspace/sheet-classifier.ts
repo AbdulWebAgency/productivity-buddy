@@ -1,7 +1,7 @@
 // Deterministic worksheet classification. No AI.
 // Used by the inspector to understand what each worksheet actually is
 // before headers / keys are detected.
-import type ExcelJS from "exceljs";
+import type { RawCellValue, SheetHandle } from "@/lib/excel/engine/shared/workbook";
 
 export type WorksheetType = "DATA" | "PIVOT" | "SUMMARY" | "DOCUMENTATION" | "EMPTY" | "UNKNOWN";
 
@@ -50,7 +50,7 @@ const DOC_LABELS = [
 
 const SCAN_ROWS = 60;
 
-function cellText(v: ExcelJS.CellValue): string {
+function cellText(v: RawCellValue): string {
   if (v == null) return "";
   if (typeof v === "string") return v;
   if (typeof v === "number" || typeof v === "boolean") return String(v);
@@ -59,7 +59,7 @@ function cellText(v: ExcelJS.CellValue): string {
     const o = v as unknown as Record<string, unknown>;
     if (typeof o.text === "string") return o.text;
     if (Array.isArray(o.richText)) return o.richText.map((r: { text?: string }) => r.text ?? "").join("");
-    if ("result" in o) return cellText(o.result as ExcelJS.CellValue);
+    if ("result" in o) return cellText((o.result ?? null) as RawCellValue);
     if (typeof o.formula === "string") return "";
   }
   return "";
@@ -67,9 +67,9 @@ function cellText(v: ExcelJS.CellValue): string {
 
 type RowStat = { row: number; filled: number; text: number; numeric: number; firstCol: number; lastCol: number };
 
-export function classifySheet(ws: ExcelJS.Worksheet): SheetClassification {
+export function classifySheet(ws: SheetHandle): SheetClassification {
   const reasons: string[] = [];
-  const hidden = ws.state === "hidden" || ws.state === "veryHidden";
+  const hidden = ws.hidden;
 
   const maxRow = Math.min(ws.rowCount, SCAN_ROWS);
   const maxCol = Math.max(1, Math.min(ws.columnCount, 80));
@@ -109,10 +109,7 @@ export function classifySheet(ws: ExcelJS.Worksheet): SheetClassification {
     if (filled > 0) stats.push({ row: r, filled, text, numeric, firstCol, lastCol });
   }
 
-  const containsMergedCells = (() => {
-    const m = (ws as unknown as { model?: { merges?: unknown[] } }).model?.merges;
-    return Array.isArray(m) && m.length > 0;
-  })();
+  const containsMergedCells = ws.hasMergedCells;
 
   const containsPivotIndicators = pivotHits > 0;
 

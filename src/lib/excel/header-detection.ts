@@ -1,22 +1,17 @@
-import ExcelJS from "exceljs";
+import type { SheetHandle } from "@/lib/excel/engine/shared/workbook";
 
-export function detectHeaderRow(
-  worksheet: ExcelJS.Worksheet,
-  scanRows = 15,
-): number {
+export function detectHeaderRow(worksheet: SheetHandle, scanRows = 15): number {
   let bestRow = 1;
   let bestScore = -1;
 
   const maxRow = Math.min(scanRows, worksheet.rowCount);
 
   for (let r = 1; r <= maxRow; r++) {
-    const row = worksheet.getRow(r);
-
     let nonEmpty = 0;
     let textCells = 0;
 
     for (let c = 1; c <= worksheet.columnCount; c++) {
-      const value = row.getCell(c).value;
+      const value = worksheet.getCell(r, c).value;
 
       if (value == null || value === "") continue;
 

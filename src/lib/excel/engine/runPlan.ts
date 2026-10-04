@@ -83,6 +83,11 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
     if (rc && rc.recalculated === 0 && rc.skipped === 0) {
       warnings.push("No formulas were found in this workbook, so nothing needed recalculating.");
     }
+    if (files.length > 1) {
+      warnings.push(
+        `Only "${files[0].name}" was recalculated; the other ${files.length - 1} uploaded file(s) were not changed.`,
+      );
+    }
   }
 
   if (hasMutating) {

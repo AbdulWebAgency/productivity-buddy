@@ -29,7 +29,6 @@ export const createWorkspace = createServerFn({ method: "POST" })
       role: "assistant",
       content:
         "Hi — I'm Productivity Buddy. Drop one or more spreadsheets on the left and I'll take a look, then we can chat about what to do with them.",
-
     });
     return { id: row.id };
   });
@@ -98,11 +97,7 @@ export const deleteWorkspace = createServerFn({ method: "POST" })
     const outPaths = (versions ?? []).map((v) => v.output_path).filter(Boolean) as string[];
     if (inPaths.length) await supabaseAdmin.storage.from("excel-uploads").remove(inPaths);
     if (outPaths.length) await supabaseAdmin.storage.from("excel-outputs").remove(outPaths);
-    const { error } = await supabase
-      .from("workspaces")
-      .delete()
-      .eq("id", data.workspaceId)
-      .eq("user_id", userId);
+    const { error } = await supabase.from("workspaces").delete().eq("id", data.workspaceId).eq("user_id", userId);
     if (error) throw new Error(error.message);
     return { ok: true };
   });
@@ -128,11 +123,7 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => RegisterFilesSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: ws } = await supabase
-      .from("workspaces")
-      .select("id,user_id")
-      .eq("id", data.workspaceId)
-      .single();
+    const { data: ws } = await supabase.from("workspaces").select("id,user_id").eq("id", data.workspaceId).single();
     if (!ws || ws.user_id !== userId) throw new Error("Workspace not found");
 
     const { extractSheetMeta, readWorkbook } = await import("./excel/engine.server");
@@ -151,9 +142,7 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
     }[] = [];
 
     for (const f of data.files) {
-      const { data: blob, error } = await supabaseAdmin.storage
-        .from("excel-uploads")
-        .download(f.storagePath);
+      const { data: blob, error } = await supabaseAdmin.storage.from("excel-uploads").download(f.storagePath);
       if (error || !blob) throw new Error(`Download failed for ${f.originalName}: ${error?.message}`);
       const buf = await blob.arrayBuffer();
       let meta: unknown = null;
@@ -177,10 +166,7 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
     }
     const { error: insErr } = await supabase.from("workspace_files").insert(rows);
     if (insErr) throw new Error(insErr.message);
-    await supabase
-      .from("workspaces")
-      .update({ updated_at: new Date().toISOString() })
-      .eq("id", data.workspaceId);
+    await supabase.from("workspaces").update({ updated_at: new Date().toISOString() }).eq("id", data.workspaceId);
 
     // Auto-greeting: after every upload batch, post a warm inspection summary
     // so the assistant behaves like a coworker who actually looked at the files.
@@ -194,8 +180,7 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
       const ctx = (allFiles ?? []).map((f, i) => ({
         index: i,
         name: f.original_name,
-        sheets:
-          (f.sheet_meta as { sheets?: { name: string; headers: string[] }[] } | null)?.sheets ?? [],
+        sheets: (f.sheet_meta as { sheets?: { name: string; headers: string[] }[] } | null)?.sheets ?? [],
         inspector: f.inspector as never,
       }));
       const greeting = buildInspectionGreeting(ctx);
@@ -210,7 +195,6 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
     }
     return { count: rows.length };
   });
-
 
 export const removeWorkspaceFile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
@@ -286,11 +270,7 @@ export const sendMessage = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
-    const { data: ws } = await supabase
-      .from("workspaces")
-      .select("id,user_id")
-      .eq("id", data.workspaceId)
-      .single();
+    const { data: ws } = await supabase.from("workspaces").select("id,user_id").eq("id", data.workspaceId).single();
     if (!ws || ws.user_id !== userId) throw new Error("Workspace not found");
 
     // Persist the user message BEFORE calling the model so it appears in
@@ -408,8 +388,6 @@ export const sendMessage = createServerFn({ method: "POST" })
     return { kind: "clarify" as const, candidates: det.candidateKeys };
   });
 
-
-
 function describePlan(plan: Plan): string {
   const lines: string[] = [];
   for (const op of plan.ops) {
@@ -417,11 +395,9 @@ function describePlan(plan: Plan): string {
     else if (op.op === "dedupe")
       lines.push(`• Remove duplicates${op.keyColumn ? ` by **${op.keyColumn}**` : " (full row)"}`);
     else if (op.op === "diff") lines.push(`• Compare files on **${op.keyColumn}** and list differences`);
-    else if (op.op === "intersection")
-      lines.push(`• Find rows present in both files, matched on **${op.keyColumn}**`);
+    else if (op.op === "intersection") lines.push(`• Find rows present in both files, matched on **${op.keyColumn}**`);
     else if (op.op === "summary") lines.push(`• Add a summary sheet`);
-    else if (op.op === "highlight_column")
-      lines.push(`• Highlight ${op.rule} values in **${op.column}**`);
+    else if (op.op === "highlight_column") lines.push(`• Highlight ${op.rule} values in **${op.column}**`);
     else if (op.op === "recalc") lines.push(`• Recalculate formulas`);
     else if (op.op === "master_merge")
       lines.push(
@@ -432,7 +408,6 @@ function describePlan(plan: Plan): string {
   }
   return lines.join("\n");
 }
-
 
 // ---------- Run plan → new version ----------
 
@@ -470,9 +445,7 @@ export const runProposedPlan = createServerFn({ method: "POST" })
     try {
       const engineFiles = await Promise.all(
         files.map(async (f) => {
-          const { data: blob, error } = await supabaseAdmin.storage
-            .from("excel-uploads")
-            .download(f.storage_path);
+          const { data: blob, error } = await supabaseAdmin.storage.from("excel-uploads").download(f.storage_path);
           if (error || !blob) throw new Error(`Download failed: ${f.original_name}`);
           return { name: f.original_name, buffer: await blob.arrayBuffer() };
         }),
@@ -491,13 +464,10 @@ export const runProposedPlan = createServerFn({ method: "POST" })
       const label = data.label ?? planLabel(data.plan);
       const outputName = `${ws.name.replace(/[^a-z0-9\-_ ]/gi, "").slice(0, 40) || "result"}-v${nextVersion}.xlsx`;
       const outputPath = `${userId}/workspaces/${data.workspaceId}/v${nextVersion}-${crypto.randomUUID()}.xlsx`;
-      const { error: upErr } = await supabaseAdmin.storage
-        .from("excel-outputs")
-        .upload(outputPath, result.buffer, {
-          contentType:
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-          upsert: true,
-        });
+      const { error: upErr } = await supabaseAdmin.storage.from("excel-outputs").upload(outputPath, result.buffer, {
+        contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        upsert: true,
+      });
       if (upErr) throw new Error(`Upload failed: ${upErr.message}`);
 
       type Json = import("@/integrations/supabase/types").Json;
@@ -542,10 +512,7 @@ export const runProposedPlan = createServerFn({ method: "POST" })
           warnings: result.warnings,
         } as unknown as Json,
       });
-      await supabase
-        .from("workspaces")
-        .update({ updated_at: new Date().toISOString() })
-        .eq("id", data.workspaceId);
+      await supabase.from("workspaces").update({ updated_at: new Date().toISOString() }).eq("id", data.workspaceId);
       return { ok: true, versionId: version.id, versionNumber: nextVersion };
     } catch (e) {
       const nice = friendlyError(e);
@@ -563,14 +530,12 @@ function planLabel(plan: Plan): string {
   const kinds = plan.ops.map((o) => o.op);
   if (kinds.includes("master_merge")) {
     const mm = plan.ops.find((o) => o.op === "master_merge") as
-      | Extract<Plan["ops"][number], { op: "master_merge" }>
-      | undefined;
+      Extract<Plan["ops"][number], { op: "master_merge" }> | undefined;
     return mm ? `Master sheet (key: ${mm.keyColumn})` : "Master sheet";
   }
   if (kinds.includes("bulk_lookup")) {
     const bl = plan.ops.find((o) => o.op === "bulk_lookup") as
-      | Extract<Plan["ops"][number], { op: "bulk_lookup" }>
-      | undefined;
+      Extract<Plan["ops"][number], { op: "bulk_lookup" }> | undefined;
     return bl ? `Bulk lookup (${bl.queries.length} queries)` : "Bulk lookup";
   }
   if (kinds.includes("merge")) return "Merge";
@@ -578,9 +543,9 @@ function planLabel(plan: Plan): string {
   if (kinds.includes("diff")) return "Compare";
   if (kinds.includes("dedupe")) return "Dedupe";
   if (kinds.includes("summary")) return "Summary";
+  if (kinds.includes("recalc")) return "Recalculate formulas";
   return kinds.join(" + ") || "Run";
 }
-
 
 export const getVersionDownloadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])

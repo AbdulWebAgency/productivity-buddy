@@ -1,6 +1,6 @@
 // Operation registry. Each op self-registers a handler; runPlan dispatches
 // through the map instead of a hard-coded switch.
-import type ExcelJS from "exceljs";
+import type { WorkbookHandle } from "./shared/workbook";
 import type { PlanOp } from "../types";
 import type { EngineFile } from "./types";
 import type { SheetGrid } from "./shared/workbook";
@@ -19,7 +19,7 @@ export type ProjectionEvent = { sheet: string; meta: ProjectionMeta };
 export type OpCtx = {
   files: EngineFile[];
   grids: SheetGrid[];
-  outWb: ExcelJS.Workbook;
+  outWb: WorkbookHandle;
   state: EngineState;
   warnings: string[];
   opLogs: Record<string, unknown>[];

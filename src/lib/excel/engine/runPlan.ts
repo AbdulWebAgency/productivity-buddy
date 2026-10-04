@@ -1,16 +1,12 @@
 // Plan orchestrator. Reads inputs, dispatches ops through the registry,
 // finalises the workbook, returns bytes + stats.
-//
-// Phase 2A: workbook I/O goes through the SheetJS compatibility layer.
-// Formula recalculation still uses the legacy ExcelJS implementation via a
-// serialize -> legacy load -> recalc -> serialize bridge (Phase 2B migrates it).
-import type ExcelJS from "exceljs";
+// All workbook I/O and formula recalculation go through the SheetJS
+// compatibility layer (shared/workbook.ts).
 import type { Plan, PlanOp } from "../types";
 import type { EngineFile, EngineResult } from "./types";
 import {
   cloneWorkbook,
   createWorkbook,
-  readLegacyWorkbook,
   readWorkbook,
   sheetToGrid,
   writeGridToSheet,
@@ -21,20 +17,6 @@ import type { CellValue } from "./shared/workbook";
 import { applyProjection, type EngineState, type OpCtx } from "./registry";
 import { recalcFormulas } from "./ops/highlight";
 import { getOpHandler } from "./ops";
-
-/** Legacy recalc bridge. Returns the (possibly) recalculated workbook bytes. */
-async function legacyRecalc(
-  bytes: Buffer,
-): Promise<{ bytes: Buffer; stats: { recalculated: number; skipped: number } | null; error?: string }> {
-  try {
-    const legacy = await readLegacyWorkbook(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-    const stats = recalcFormulas(legacy);
-    const out = await legacy.xlsx.writeBuffer();
-    return { bytes: Buffer.from(out), stats };
-  } catch (e) {
-    return { bytes, stats: null, error: e instanceof Error ? e.message : String(e) };
-  }
-}
 
 export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineResult> {
   const warnings: string[] = [...plan.warnings];
@@ -61,9 +43,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
   const ctxBase = {
     files,
     grids,
-    // OpCtx (registry.ts, not migrated) still types outWb as ExcelJS. Ops only
-    // pass it to writeGridToSheet, which accepts both shapes.
-    outWb: outWb as unknown as ExcelJS.Workbook,
+    outWb,
     state,
     warnings,
     opLogs,
@@ -123,21 +103,14 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
     warnings.push("No operation produced output.");
   }
 
-  let buffer = await writeWorkbook(outWb);
-
-  const explicitRecalc = plan.ops.some((o) => o.op === "recalc");
-  if (hasMutating || explicitRecalc) {
-    const r = await legacyRecalc(buffer);
-    if (r.stats) {
-      buffer = r.bytes;
-      if (hasMutating && !explicitRecalc) opLogs.push({ op: "recalc_auto", status: "ok", ...r.stats });
-      else opLogs.push({ op: "recalc_bridge", status: "ok", ...r.stats });
-    } else {
-      // Legacy runtime unavailable: keep SheetJS output (cached formula results preserved).
-      console.warn(`[engine] legacy recalc skipped: ${r.error}`);
-      opLogs.push({ op: hasMutating && !explicitRecalc ? "recalc_auto" : "recalc_bridge", status: "skipped", reason: r.error });
-    }
+  // Explicit `recalc` ops already ran through their handler (log: "recalc").
+  // Mutating plans without one get an automatic pass (log: "recalc_auto").
+  if (hasMutating && !plan.ops.some((o) => o.op === "recalc")) {
+    const r = recalcFormulas(outWb);
+    opLogs.push({ op: "recalc_auto", status: "ok", ...r });
   }
+
+  const buffer = await writeWorkbook(outWb);
 
   stats.totalMs = Date.now() - startAll;
   stats.producedSheets = state.producedSheets;

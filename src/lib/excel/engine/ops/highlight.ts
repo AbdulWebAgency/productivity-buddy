@@ -1,28 +1,24 @@
 // highlight_column + recalc live together — both are "post-processing" ops
 // that don't produce their own output sheet.
-import type ExcelJS from "exceljs";
 import { HyperFormula } from "hyperformula";
 import type { PlanOp } from "../../types";
 import { resolveColumn } from "../shared/headers";
-import { cellToValue } from "../shared/workbook";
+import { cellToValue, type WorkbookHandle } from "../shared/workbook";
 import type { OpHandler } from "../registry";
 
-/** Recalc formulas via HyperFormula. Preserves originals when unsupported. */
-export function recalcFormulas(wb: ExcelJS.Workbook): { recalculated: number; skipped: number } {
+/** Recalc formulas via HyperFormula on the workbook compatibility layer.
+ *  Formulas are kept; only cached results change. Unsupported ones are left
+ *  untouched and counted as skipped. */
+export function recalcFormulas(wb: WorkbookHandle): { recalculated: number; skipped: number } {
+  const sheets = wb.worksheets;
   const sheetsData: Record<string, (string | number | boolean | null)[][]> = {};
-  wb.worksheets.forEach((ws) => {
+  sheets.forEach((ws) => {
     const data: (string | number | boolean | null)[][] = [];
     for (let r = 1; r <= ws.rowCount; r++) {
-      const row = ws.getRow(r);
       const out: (string | number | boolean | null)[] = [];
       for (let c = 1; c <= ws.columnCount; c++) {
-        const cell = row.getCell(c);
-        const v = cell.value;
-        if (v && typeof v === "object" && "formula" in v) {
-          out.push("=" + (v as ExcelJS.CellFormulaValue).formula);
-        } else {
-          out.push(cellToValue(v) as string | number | boolean | null);
-        }
+        const cell = ws.getCell(r, c);
+        out.push(cell.formula != null ? "=" + cell.formula : cellToValue(cell.value));
       }
       data.push(out);
     }
@@ -33,32 +29,24 @@ export function recalcFormulas(wb: ExcelJS.Workbook): { recalculated: number; sk
   let skipped = 0;
   try {
     const hf = HyperFormula.buildFromSheets(sheetsData, { licenseKey: "gpl-v3" });
-    wb.worksheets.forEach((ws, si) => {
+    sheets.forEach((ws) => {
       const sheetId = hf.getSheetId(ws.name);
       if (sheetId == null) return;
       for (let r = 1; r <= ws.rowCount; r++) {
         for (let c = 1; c <= ws.columnCount; c++) {
-          const cell = ws.getRow(r).getCell(c);
-          const v = cell.value;
-          if (v && typeof v === "object" && "formula" in v) {
-            try {
-              const result = hf.getCellValue({ sheet: sheetId, row: r - 1, col: c - 1 });
-              if (result != null && typeof result !== "object") {
-                cell.value = {
-                  formula: (v as ExcelJS.CellFormulaValue).formula,
-                  result: result as ExcelJS.CellFormulaValue["result"],
-                } as ExcelJS.CellFormulaValue;
-                recalculated++;
-              } else {
-                skipped++;
-              }
-            } catch {
+          if (ws.getCell(r, c).formula == null) continue;
+          try {
+            const result = hf.getCellValue({ sheet: sheetId, row: r - 1, col: c - 1 });
+            if (result != null && typeof result !== "object" && ws.setFormulaResult(r, c, result)) {
+              recalculated++;
+            } else {
               skipped++;
             }
+          } catch {
+            skipped++;
           }
         }
       }
-      void si;
     });
     hf.destroy();
   } catch (e) {

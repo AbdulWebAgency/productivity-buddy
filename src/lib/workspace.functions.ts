@@ -135,8 +135,7 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
       .single();
     if (!ws || ws.user_id !== userId) throw new Error("Workspace not found");
 
-    const ExcelJS = (await import("exceljs")).default;
-    const { extractSheetMeta } = await import("./excel/engine.server");
+    const { extractSheetMeta, readWorkbook } = await import("./excel/engine.server");
     const { inspectWorkbook } = await import("./workspace/inspector.server");
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
@@ -160,8 +159,7 @@ export const registerWorkspaceFiles = createServerFn({ method: "POST" })
       let meta: unknown = null;
       let inspector: unknown = null;
       try {
-        const wb = new ExcelJS.Workbook();
-        await wb.xlsx.load(buf);
+        const wb = await readWorkbook(buf);
         meta = extractSheetMeta(wb);
         inspector = inspectWorkbook(wb);
       } catch (e) {

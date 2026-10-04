@@ -16,7 +16,7 @@ export function friendlyError(err: unknown): string {
     return "This workspace has no uploaded files yet. Upload one or more spreadsheets to begin.";
   }
   if (low.includes("planner produced no operations")) {
-    return "I couldn't turn that into a concrete plan. Try rephrasing (e.g. \"merge on Registration Number\" or \"find missing students\").";
+    return 'I couldn\'t turn that into a concrete plan. Try rephrasing (e.g. "merge on Registration Number" or "find missing students").';
   }
   if (low.includes("unauthorized") || low.includes("forbidden")) {
     return "You don't have access to that workspace.";
@@ -37,7 +37,9 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
       continue;
     }
     if (op.op === "merge") {
-      lines.push(`• Merged ${op.inputFiles ?? "?"} files on "${op.keyColumn}" — ${op.merged ?? 0} rows (${op.unmatched ?? 0} unmatched).`);
+      lines.push(
+        `• Merged ${op.inputFiles ?? "?"} files on "${op.keyColumn}" — ${op.merged ?? 0} rows (${op.unmatched ?? 0} unmatched).`,
+      );
     } else if (op.op === "dedupe") {
       lines.push(`• Removed ${op.duplicatesRemoved ?? 0} duplicate rows (${op.rowsOut ?? 0} kept).`);
     } else if (op.op === "diff") {
@@ -58,21 +60,29 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
       lines.push(
         `• Bulk lookup: ${op.matched ?? 0}/${op.queries ?? 0} matched (${op.notFound ?? 0} not found, ${op.rowsReturned ?? 0} rows returned).`,
       );
+    } else if (op.op === "recalc") {
+      const done = Number(op.recalculated ?? 0);
+      const skipped = Number(op.skipped ?? 0);
+      lines.push(
+        done === 0 && skipped === 0
+          ? `• No formulas found to recalculate.`
+          : `• Recalculated ${done} formula${done === 1 ? "" : "s"} (formulas kept)${skipped ? `; ${skipped} unsupported formula${skipped === 1 ? "" : "s"} left unchanged` : ""}.`,
+      );
     } else {
       lines.push(`• Ran ${op.op}.`);
     }
-
   }
   const projection = Array.isArray(stats.projection)
-    ? (stats.projection as Array<{ sheet: string; meta: { applied: boolean; resolved: string[]; unresolved: string[]; alwaysKept: string[] } }>)
+    ? (stats.projection as Array<{
+        sheet: string;
+        meta: { applied: boolean; resolved: string[]; unresolved: string[]; alwaysKept: string[] };
+      }>)
     : [];
   if (projection.length > 0) {
     const firstApplied = projection.find((e) => e.meta?.applied);
     if (firstApplied) {
       const cols = firstApplied.meta.resolved.join(", ");
-      const extra = firstApplied.meta.alwaysKept.length
-        ? ` (plus ${firstApplied.meta.alwaysKept.join(", ")})`
-        : "";
+      const extra = firstApplied.meta.alwaysKept.length ? ` (plus ${firstApplied.meta.alwaysKept.join(", ")})` : "";
       lines.push(`• Exported columns: ${cols}${extra}.`);
     }
     const skipped = new Set<string>();

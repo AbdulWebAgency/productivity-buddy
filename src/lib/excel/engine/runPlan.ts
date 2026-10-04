@@ -1,16 +1,12 @@
 // Plan orchestrator. Reads inputs, dispatches ops through the registry,
 // finalises the workbook, returns bytes + stats.
-//
-// Phase 2A: workbook I/O goes through the SheetJS compatibility layer.
-// Formula recalculation still uses the legacy ExcelJS implementation via a
-// serialize -> legacy load -> recalc -> serialize bridge (Phase 2B migrates it).
-import type ExcelJS from "exceljs";
+// All workbook I/O and formula recalculation go through the SheetJS
+// compatibility layer (shared/workbook.ts).
 import type { Plan, PlanOp } from "../types";
 import type { EngineFile, EngineResult } from "./types";
 import {
   cloneWorkbook,
   createWorkbook,
-  readLegacyWorkbook,
   readWorkbook,
   sheetToGrid,
   writeGridToSheet,
@@ -21,20 +17,6 @@ import type { CellValue } from "./shared/workbook";
 import { applyProjection, type EngineState, type OpCtx } from "./registry";
 import { recalcFormulas } from "./ops/highlight";
 import { getOpHandler } from "./ops";
-
-/** Legacy recalc bridge. Returns the (possibly) recalculated workbook bytes. */
-async function legacyRecalc(
-  bytes: Buffer,
-): Promise<{ bytes: Buffer; stats: { recalculated: number; skipped: number } | null; error?: string }> {
-  try {
-    const legacy = await readLegacyWorkbook(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
-    const stats = recalcFormulas(legacy);
-    const out = await legacy.xlsx.writeBuffer();
-    return { bytes: Buffer.from(out), stats };
-  } catch (e) {
-    return { bytes, stats: null, error: e instanceof Error ? e.message : String(e) };
-  }
-}
 
 export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineResult> {
   const warnings: string[] = [...plan.warnings];

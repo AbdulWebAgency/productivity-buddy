@@ -75,12 +75,6 @@ export interface WorkbookHandle {
 // SheetJS adapter implementation
 // ---------------------------------------------------------------------------
 
-function isHandle(wb: unknown): wb is WorkbookHandle {
-  return !!wb && typeof wb === "object" && (wb as { kind?: string }).kind === "sheetjs";
-}
-function isSheetHandle(ws: unknown): ws is SheetHandle {
-  return !!ws && typeof ws === "object" && (ws as { kind?: string }).kind === "sheetjs-sheet";
-}
 
 function rawFromSheetCell(c: XLSX.CellObject | undefined): RawCellValue {
   if (!c) return null;

@@ -3,8 +3,7 @@
 // SheetJS (`xlsx`) is isolated behind WorkbookHandle / SheetHandle /
 // RowHandle / CellHandle, which keep the engine's 1-indexed (row, col)
 // calling convention. SheetJS is 0-indexed internally; all translation
-// happens here. This module has no ExcelJS dependency. The temporary legacy
-// ExcelJS reader lives in ./legacy-workbook.server.ts.
+// happens here.
 import * as XLSX from "xlsx";
 
 import type { SheetMeta } from "../../types";
@@ -14,7 +13,7 @@ import { detectHeaderRow } from "@/lib/excel/header-detection";
 export type CellValue = string | number | boolean | null;
 export type SheetGrid = { headers: string[]; rows: CellValue[][] };
 
-/** Raw cell value exposed by the adapter. Formula cells mirror ExcelJS's
+/** Raw cell value exposed by the adapter. Formula cells use a
  *  `{ formula, result }` shape so HyperFormula recalculation can reuse it. */
 export type RawCellValue =
   | string
@@ -113,7 +112,7 @@ function makeSheet(book: XLSX.WorkBook, name: string): SheetHandle {
     kind: "sheetjs-sheet",
     name,
     raw: ws,
-    // Match ExcelJS: last used row/col number (1-indexed), 0 when empty.
+    // Last used row/col number (1-indexed), 0 when empty.
     get rowCount() {
       return range ? range.e.r + 1 : 0;
     },

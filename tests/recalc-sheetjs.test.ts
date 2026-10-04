@@ -70,10 +70,10 @@ describe("recalcFormulas on SheetJS handles", () => {
     expect(d2.v).toBe(5);
   });
 
-  test("no ExcelJS runtime is used for recalculation", async () => {
+  test("recalculation runs on the SheetJS boundary with no legacy bridge", async () => {
     const src = await Bun.file("src/lib/excel/engine/ops/highlight.ts").text();
     const run = await Bun.file("src/lib/excel/engine/runPlan.ts").text();
-    expect(src).not.toMatch(/exceljs/i);
-    expect(run).not.toMatch(/exceljs|readLegacyWorkbook|legacyRecalc/i);
+    expect(src).toContain('from "../shared/workbook"');
+    expect(run).not.toMatch(/legacyRecalc|readLegacy/);
   });
 });

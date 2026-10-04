@@ -70,6 +70,19 @@ describe("recalcFormulas on SheetJS handles", () => {
     expect(d2.v).toBe(5);
   });
 
+  test("recalc-only plan returns the user's workbook with formulas kept and cached values refreshed", async () => {
+    const r = await runPlan([{ name: "f.xlsx", buffer: fixture() }], plan([{ op: "recalc" }]));
+    expect(r.warnings.join(" ")).not.toContain("No operation produced output");
+    const out = XLSX.read(r.buffer, { type: "buffer", cellFormula: true });
+    expect(out.SheetNames).toEqual(["Data"]); // no "No output" sheet, no extra Result sheet
+    expect(out.Sheets["Data"]["D2"].f).toBe("B2+C2"); // formula preserved
+    expect(out.Sheets["Data"]["D2"].v).toBe(5); // stale 0 refreshed
+    expect(out.Sheets["Data"]["D3"].v).toBe(9);
+    const rc = (r.stats.ops as Record<string, unknown>[]).find((l) => l.op === "recalc")!;
+    expect(rc.recalculated).toBe(2);
+    expect(rc.skipped).toBe(1);
+  });
+
   test("recalculation runs on the SheetJS boundary with no legacy bridge", async () => {
     const src = await Bun.file("src/lib/excel/engine/ops/highlight.ts").text();
     const run = await Bun.file("src/lib/excel/engine/runPlan.ts").text();

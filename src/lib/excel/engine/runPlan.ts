@@ -28,9 +28,12 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
 
   // Determine output strategy.
   const hasMutating = plan.ops.some((o) => o.op === "merge" || o.op === "dedupe" || o.op === "highlight_column");
+  // A plan made only of `recalc` ops refreshes the user's own workbook:
+  // the deliverable is a clone of the first workbook with formulas kept.
+  const recalcOnly = plan.ops.length > 0 && plan.ops.every((o) => o.op === "recalc");
   // Merge/dedupe/highlight keep the first workbook's sheets by mutating an
   // independent copy of it. Diff/summary produce brand-new deliverables.
-  const outWb: WorkbookHandle = hasMutating ? cloneWorkbook(workbooks[0]) : createWorkbook();
+  const outWb: WorkbookHandle = hasMutating || recalcOnly ? cloneWorkbook(workbooks[0]) : createWorkbook();
   outWb.creator = "Productivity Buddy";
   outWb.created = new Date();
 
@@ -75,6 +78,13 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
     }
   }
 
+  if (recalcOnly) {
+    const rc = opLogs.find((l) => l.op === "recalc");
+    if (rc && rc.recalculated === 0 && rc.skipped === 0) {
+      warnings.push("No formulas were found in this workbook, so nothing needed recalculating.");
+    }
+  }
+
   if (hasMutating) {
     const alwaysKeep: string[] = [];
     for (const o of plan.ops) {
@@ -95,7 +105,7 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
     outWb.moveWorksheet("Result", 0);
   }
 
-  if (state.producedSheets === 0) {
+  if (state.producedSheets === 0 && !recalcOnly) {
     writeGridToSheet(outWb, "No output", {
       headers: ["Notice"],
       rows: [["No operation produced output. See warnings for details."], ...warnings.map((w) => [w] as CellValue[])],

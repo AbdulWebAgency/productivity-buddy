@@ -7,6 +7,8 @@ import { applyProjection, type OpHandler } from "../registry";
 export type MasterMergeResult = {
   master: SheetGrid;
   missingPerFile: { fileName: string; keys: string[] }[];
+  /** Keys that exist in at least one file but were dropped by the join (left/inner). */
+  excludedKeys: string[];
   summary: SheetGrid;
   stats: Record<string, unknown>;
 };
@@ -48,9 +50,7 @@ export function opMasterMerge(
         const out: CellValue[] = new Array(headerSet.length).fill(null);
         out[0] = fileNames[fi];
         g.headers.forEach((h, ci) => {
-          const targetIdx = headerSet.findIndex(
-            (x) => x.trim().toLowerCase() === h.trim().toLowerCase(),
-          );
+          const targetIdx = headerSet.findIndex((x) => x.trim().toLowerCase() === h.trim().toLowerCase());
           if (targetIdx > 0) out[targetIdx] = r[ci];
         });
         rows.push(out);
@@ -67,6 +67,7 @@ export function opMasterMerge(
     return {
       master: { headers: headerSet, rows },
       missingPerFile: [],
+      excludedKeys: [],
       summary,
       stats: { joinType: "append", files: grids.length, rows: rows.length },
     };
@@ -80,9 +81,7 @@ export function opMasterMerge(
   grids.forEach((g, fi) => {
     g.headers.forEach((h, ci) => {
       if (ci === keyIdxs[fi] || !h) return;
-      const existingIndex = headers.findIndex(
-        (x) => x.trim().toLowerCase() === h.trim().toLowerCase(),
-      );
+      const existingIndex = headers.findIndex((x) => x.trim().toLowerCase() === h.trim().toLowerCase());
       if (existingIndex >= 0) {
         columnMeta[existingIndex]!.sources.push({ fileIdx: fi, sourceHeader: h });
       } else {
@@ -127,12 +126,7 @@ export function opMasterMerge(
           entry.row[ti] = newVal;
         } else if (op.dupeStrategy === "latest") {
           entry.row[ti] = newVal;
-        } else if (
-          op.dupeStrategy === "merge" &&
-          newVal != null &&
-          newVal !== "" &&
-          String(newVal) !== String(cur)
-        ) {
+        } else if (op.dupeStrategy === "merge" && newVal != null && newVal !== "" && String(newVal) !== String(cur)) {
           entry.row[ti] = `${String(cur)} | ${String(newVal)}`;
         }
       }
@@ -147,6 +141,10 @@ export function opMasterMerge(
   });
 
   const rows = kept.map((k) => byKey.get(k)!.row);
+
+  // Keys the join dropped (they exist in some file but not in the rows this join keeps).
+  const keptSet = new Set(kept);
+  const excludedKeys = keyOrder.filter((k) => !keptSet.has(k));
 
   const missingPerFile = grids.map((_, fi) => {
     const keys = kept.filter((k) => !byKey.get(k)!.seenIn.has(fi));
@@ -166,12 +164,16 @@ export function opMasterMerge(
       ["Rows in master", rows.length],
       ["Duplicate key values across files", totalDup],
       ...missingPerFile.map((m) => [`Missing in ${m.fileName}`, m.keys.length] as CellValue[]),
+      ...(excludedKeys.length > 0
+        ? ([[`Keys left out by the ${op.joinType} join`, excludedKeys.length]] as CellValue[][])
+        : []),
     ],
   };
 
   return {
     master: { headers, rows },
     missingPerFile,
+    excludedKeys,
     summary,
     stats: {
       joinType: op.joinType,
@@ -180,6 +182,7 @@ export function opMasterMerge(
       uniqueKeys: keyOrder.length,
       rows: rows.length,
       duplicates: totalDup,
+      excluded: excludedKeys.length,
     },
   };
 }
@@ -209,6 +212,13 @@ export const masterMergeHandler: OpHandler<Extract<PlanOp, { op: "master_merge" 
       rows: mp.keys.map((k) => [k]),
     });
     ctx.state.producedSheets++;
+  }
+  if (m.excludedKeys.length > 0) {
+    const shown = m.excludedKeys.slice(0, 5).join(", ");
+    const more = m.excludedKeys.length > 5 ? ` and ${m.excludedKeys.length - 5} more` : "";
+    ctx.warnings.push(
+      `${m.excludedKeys.length} ${op.keyColumn} value(s) were left out by the ${op.joinType} join (${shown}${more}). They exist in other files but not in the rows this join keeps.`,
+    );
   }
   ctx.opLogs.push({
     op: "master_merge",

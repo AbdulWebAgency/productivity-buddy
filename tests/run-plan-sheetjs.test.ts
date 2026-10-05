@@ -43,6 +43,24 @@ describe("runPlan on SheetJS layer", () => {
     expect(JSON.stringify(out.sheets["Changed rows"]).toLowerCase()).toContain("r2");
   });
 
+  test("diff: Changed rows keeps the key's original case and shows old → new values", async () => {
+    const OLD = file("old.xlsx", [
+      ["Customer ID", "City", "Plan"],
+      ["C003", "Chennai", "Pro"],
+      ["C004", "Seoul", "Basic"],
+    ]);
+    const NEW = file("new.xlsx", [
+      ["Customer ID", "City", "Plan"],
+      ["C003", "Bengaluru", "Pro"],
+      ["C004", "Seoul", "Basic"],
+    ]);
+    const r = await runPlan([OLD, NEW], plan([{ op: "diff", keyColumn: "Customer ID" }]));
+    const rows = read(r.buffer).sheets["Changed rows"];
+    expect(rows[0]).toEqual(["Customer ID", "Changed Columns", "Values (old.xlsx → new.xlsx)"]);
+    expect(rows[1]).toEqual(["C003", "City", "City: Chennai → Bengaluru"]); // not "c003"
+    expect(rows.length).toBe(2); // C004 is unchanged
+  });
+
   test("non-mutating: summary produces fresh workbook", async () => {
     const r = await runPlan([A], plan([{ op: "summary" }]));
     const out = read(r.buffer);
@@ -50,7 +68,12 @@ describe("runPlan on SheetJS layer", () => {
   });
 
   test("mutating: dedupe puts Result first and keeps source sheet", async () => {
-    const D = file("d.xlsx", [["Id", "V"], [1, "a"], [1, "a"], [2, "b"]]);
+    const D = file("d.xlsx", [
+      ["Id", "V"],
+      [1, "a"],
+      [1, "a"],
+      [2, "b"],
+    ]);
     const r = await runPlan([D], plan([{ op: "dedupe", strategy: "full_row" }]));
     const out = read(r.buffer);
     expect(out.names[0]).toBe("Result");

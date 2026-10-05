@@ -80,6 +80,7 @@ export function opDiff(
     else {
       const rowA = mapA.get(key)!;
       const changedColumns: string[] = [];
+      const changedDetails: string[] = [];
 
       for (let i = 0; i < a.headers.length; i++) {
         if (i === kA) continue;
@@ -94,11 +95,14 @@ export function opDiff(
 
         if (valueA !== valueB) {
           changedColumns.push(a.headers[i]);
+          changedDetails.push(`${a.headers[i]}: ${valueA || "(blank)"} → ${valueB || "(blank)"}`);
         }
       }
 
       if (changedColumns.length > 0) {
-        changed.push([key, changedColumns.join(", ")]);
+        // Show the key as the user wrote it (the map key is lowercased for matching only).
+        const displayKey = String(rowB[kB] ?? "").trim();
+        changed.push([displayKey, changedColumns.join(", "), changedDetails.join("; ")]);
       }
     }
   }
@@ -109,7 +113,7 @@ export function opDiff(
   return {
     missingInA: { headers: b.headers, rows: missingInA },
     missingInB: { headers: a.headers, rows: missingInB },
-    changed: { headers: [op.keyColumn, "Changed Columns"], rows: changed },
+    changed: { headers: [op.keyColumn, "Changed Columns", `Values (${namesA} → ${namesB})`], rows: changed },
     stats: {
       comparedA: mapA.size,
       comparedB: mapB.size,
@@ -155,7 +159,7 @@ export const diffHandler: OpHandler<Extract<PlanOp, { op: "diff" }>> = (op, ctx)
     ctx.state.producedSheets++;
   }
   if (d.changed.rows.length > 0) {
-    // Diagnostic sheet — always [key, "Changed Columns"], skip projection.
+    // Diagnostic sheet — always [key, "Changed Columns", values], skip projection.
     writeGridToSheet(ctx.outWb, "Changed rows", d.changed);
     ctx.state.producedSheets++;
   }

@@ -6,6 +6,9 @@ import { resolveColumn } from "../shared/headers";
 import { cellToValue, type WorkbookHandle } from "../shared/workbook";
 import type { OpHandler } from "../registry";
 
+/** Header of the column that marks rows matched by highlight_column. */
+export const HIGHLIGHT_FLAG_HEADER = "PB Flag";
+
 /** Recalc formulas via HyperFormula on the workbook compatibility layer.
  *  Formulas are kept; only cached results change. Unsupported ones are left
  *  untouched and counted as skipped. */
@@ -94,6 +97,31 @@ export const highlightColumnHandler: OpHandler<Extract<PlanOp, { op: "highlight_
     }
   }
   ctx.state.unmatched = new Set([...(ctx.state.unmatched ?? []), ...highlightRows]);
+
+  // Cell colors can't be written by the current SheetJS build, so every matching row is
+  // also marked in a visible "PB Flag" column. It works in any viewer and can be filtered.
+  if (highlightRows.size > 0) {
+    const label =
+      op.rule === "missing"
+        ? `Missing ${op.column}`
+        : op.rule === "duplicate"
+          ? `Duplicate ${op.column}`
+          : `Outlier in ${op.column}`;
+    let flagIdx = cg.headers.indexOf(HIGHLIGHT_FLAG_HEADER);
+    const headers = flagIdx >= 0 ? cg.headers : [...cg.headers, HIGHLIGHT_FLAG_HEADER];
+    if (flagIdx < 0) flagIdx = headers.length - 1;
+    const rows = cg.rows.map((r, ri) => {
+      const row = r.slice();
+      while (row.length <= flagIdx) row.push(null);
+      if (highlightRows.has(ri)) {
+        const prev = row[flagIdx];
+        row[flagIdx] = prev ? `${String(prev)}; ${label}` : label;
+      }
+      return row;
+    });
+    ctx.state.currentGrid = { headers, rows };
+  }
+
   ctx.opLogs.push({
     op: "highlight_column",
     status: "ok",
@@ -101,6 +129,7 @@ export const highlightColumnHandler: OpHandler<Extract<PlanOp, { op: "highlight_
     column: op.column,
     rule: op.rule,
     matches: highlightRows.size,
+    flagColumn: highlightRows.size > 0 ? HIGHLIGHT_FLAG_HEADER : null,
   });
 };
 

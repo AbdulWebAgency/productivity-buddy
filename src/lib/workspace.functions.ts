@@ -544,6 +544,7 @@ function planLabel(plan: Plan): string {
   if (kinds.includes("dedupe")) return "Dedupe";
   if (kinds.includes("summary")) return "Summary";
   if (kinds.includes("recalc")) return "Recalculate formulas";
+  if (kinds.includes("highlight_column")) return "Flagged rows";
   return kinds.join(" + ") || "Run";
 }
 

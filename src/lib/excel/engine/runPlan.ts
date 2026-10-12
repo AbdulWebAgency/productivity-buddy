@@ -15,7 +15,7 @@ import {
 } from "./shared/workbook";
 import type { CellValue } from "./shared/workbook";
 import { applyProjection, type EngineState, type OpCtx } from "./registry";
-import { recalcFormulas } from "./ops/highlight";
+import { HIGHLIGHT_FLAG_HEADER, recalcFormulas } from "./ops/highlight";
 import { getOpHandler } from "./ops";
 
 export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineResult> {
@@ -99,7 +99,8 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
         const k = (o as Extract<PlanOp, { op: "dedupe" }>).keyColumn;
         if (k) alwaysKeep.push(k);
       } else if (o.op === "highlight_column") {
-        alwaysKeep.push((o as Extract<PlanOp, { op: "highlight_column" }>).column);
+        alwaysKeep.push((o as Extract<PlanOp, { op: "highlight_column" }>).column, HIGHLIGHT_FLAG_HEADER);
+      }
       }
     }
     const finalCtx: OpCtx = { ...ctxBase, started: Date.now() };

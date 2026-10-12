@@ -60,6 +60,13 @@ export function summarizeRun(stats: Record<string, unknown>, warnings: string[])
       lines.push(
         `• Bulk lookup: ${op.matched ?? 0}/${op.queries ?? 0} matched (${op.notFound ?? 0} not found, ${op.rowsReturned ?? 0} rows returned).`,
       );
+    } else if (op.op === "highlight_column") {
+      const n = Number(op.matches ?? 0);
+      lines.push(
+        n === 0
+          ? `• No rows matched the "${op.rule}" check on "${op.column}", so nothing was flagged.`
+          : `• Flagged ${n} row${n === 1 ? "" : "s"} (${op.rule} in "${op.column}") in the "${op.flagColumn ?? "PB Flag"}" column.`,
+      );
     } else if (op.op === "recalc") {
       const done = Number(op.recalculated ?? 0);
       const skipped = Number(op.skipped ?? 0);

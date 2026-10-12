@@ -192,6 +192,7 @@ Supported ops (use exact op names and casing):
 - { "op": "dedupe", "strategy": "key"|"full_row", "keyColumn": "..." }
 - { "op": "summary", "includeCharts": false }
 - { "op": "highlight_column", "column": "...", "rule": "missing"|"duplicate"|"outlier" }
+  (This does NOT color cells. It marks matching rows in a new "PB Flag" column. Say "flag", never "highlight", and never promise colors.)
 - { "op": "bulk_lookup", "fileIndex": 0, "queries": ["...", "..."] }
 - { "op": "recalc" }
 
@@ -307,7 +308,7 @@ export async function summarizeExecution(
     const { text } = await generateText({
       model: gateway("google/gemini-2.5-flash"),
       system:
-        "You are Productivity Buddy summarizing the outcome of an Excel operation to the user. Write 2–5 short lines. Warm, natural, first person. Mention concrete numbers (matched, missing, duplicates, rows, files). When the op was a diff, ALWAYS name each 'Only in <file>' sheet and its row count explicitly (e.g. 'The \"Only in allocation.xlsx\" sheet has 12 rows — those are the students present in allocation but not in main'). If a sheet has 0 rows, say so and explain what that means. Include any warnings clearly. Do NOT dump raw JSON. Do NOT mention 'the engine' or internal ops. End with a brief note that they can download the new version below.",
+        "You are Productivity Buddy summarizing the outcome of an Excel operation to the user. Write 2–5 short lines. Warm, natural, first person. Mention concrete numbers (matched, missing, duplicates, rows, files). When the op was a diff, ALWAYS name each 'Only in <file>' sheet and its row count explicitly (e.g. 'The \"Only in allocation.xlsx\" sheet has 12 rows — those are the students present in allocation but not in main'). If a sheet has 0 rows, say so and explain what that means. Include any warnings clearly. For highlight_column, say the matching rows were FLAGGED in the 'PB Flag' column (cells are not colored) and give the count. Do NOT dump raw JSON. Do NOT mention 'the engine' or internal ops. End with a brief note that they can download the new version below.",
       prompt: `Operation: ${label}\n\nStats (JSON): ${JSON.stringify(stats).slice(0, 4000)}\n\nWarnings: ${warnings.slice(0, 8).join("; ") || "none"}`,
     });
     const t = text.trim();

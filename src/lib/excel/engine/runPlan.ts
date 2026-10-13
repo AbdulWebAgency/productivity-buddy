@@ -98,9 +98,8 @@ export async function runPlan(files: EngineFile[], plan: Plan): Promise<EngineRe
       } else if (o.op === "dedupe") {
         const k = (o as Extract<PlanOp, { op: "dedupe" }>).keyColumn;
         if (k) alwaysKeep.push(k);
-      } else if (o.op === "highlight_column") {
+         } else if (o.op === "highlight_column") {
         alwaysKeep.push((o as Extract<PlanOp, { op: "highlight_column" }>).column, HIGHLIGHT_FLAG_HEADER);
-      }
       }
     }
     const finalCtx: OpCtx = { ...ctxBase, started: Date.now() };

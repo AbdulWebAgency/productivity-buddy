@@ -16,12 +16,7 @@ export type SheetGrid = { headers: string[]; rows: CellValue[][] };
 /** Raw cell value exposed by the adapter. Formula cells use a
  *  `{ formula, result }` shape so HyperFormula recalculation can reuse it. */
 export type RawCellValue =
-  | string
-  | number
-  | boolean
-  | Date
-  | null
-  | { formula: string; result?: string | number | boolean | Date | null };
+  string | number | boolean | Date | null | { formula: string; result?: string | number | boolean | Date | null };
 
 export interface CellHandle {
   readonly row: number; // 1-indexed
@@ -74,12 +69,12 @@ export interface WorkbookHandle {
 // SheetJS adapter implementation
 // ---------------------------------------------------------------------------
 
-
 function rawFromSheetCell(c: XLSX.CellObject | undefined): RawCellValue {
   if (!c) return null;
   let v: string | number | boolean | Date | null;
   if (c.t === "z" || c.v === undefined) v = null;
-  else if (c.t === "e") v = null; // error cells surface as empty, matching cellToValue
+  else if (c.t === "e")
+    v = null; // error cells surface as empty, matching cellToValue
   else v = c.v as string | number | boolean | Date;
   if (c.f) return { formula: c.f, result: v };
   return v;
@@ -222,8 +217,23 @@ export function cloneWorkbook(wb: WorkbookHandle): WorkbookHandle {
   return wrap(structuredClone(wb.raw));
 }
 
+/**
+ * SheetJS echoes a non-standard `level` attribute on <col> whenever a column was read with
+ * outlineLevel="0" (LibreOffice-written files do this). `level` is not valid OOXML and some
+ * readers (e.g. openpyxl) refuse the file, so drop zero outline levels before writing.
+ * Real outline levels (> 0) are left alone.
+ */
+export function stripZeroOutlineLevels(book: XLSX.WorkBook): void {
+  for (const name of book.SheetNames) {
+    for (const col of book.Sheets[name]?.["!cols"] ?? []) {
+      if (col && col.level === 0) delete col.level;
+    }
+  }
+}
+
 /** Serialize to XLSX bytes. */
 export async function writeWorkbook(wb: WorkbookHandle): Promise<Buffer> {
+  stripZeroOutlineLevels(wb.raw);
   const out = XLSX.write(wb.raw, { type: "array", bookType: "xlsx", compression: true }) as ArrayBuffer;
   return Buffer.from(new Uint8Array(out));
 }

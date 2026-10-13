@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { z } from "zod";
 import { PlanSchema, type Plan } from "./excel/types";
+import { buildOutputName } from "./workspace/output-name";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_FILES_PER_WORKSPACE = 10;
@@ -462,8 +463,13 @@ export const runProposedPlan = createServerFn({ method: "POST" })
         .limit(1);
       const nextVersion = (prior?.[0]?.version_number ?? 0) + 1;
       const label = data.label ?? planLabel(data.plan);
-      const outputName = `${ws.name.replace(/[^a-z0-9\-_ ]/gi, "").slice(0, 40) || "result"}-v${nextVersion}.xlsx`;
+      const outputName = buildOutputName(
+        data.plan,
+        files.map((f) => f.original_name),
+        nextVersion,
+      );
       const outputPath = `${userId}/workspaces/${data.workspaceId}/v${nextVersion}-${crypto.randomUUID()}.xlsx`;
+
       const { error: upErr } = await supabaseAdmin.storage.from("excel-outputs").upload(outputPath, result.buffer, {
         contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         upsert: true,
